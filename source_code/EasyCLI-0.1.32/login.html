@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; script-src 'self' 'unsafe-inline' tauri:; style-src 'self' 'unsafe-inline'; connect-src 'self' http: https: tauri: ipc:"
+        />
+        <meta
+            http-equiv="X-Content-Security-Policy"
+            content="default-src 'self'; script-src 'self' 'unsafe-inline' tauri:; style-src 'self' 'unsafe-inline'; connect-src 'self' http: https: tauri: ipc:"
+        />
+        <title>NiceCLI</title>
+        <script src="js/theme-manager.js"></script>
+        <script src="js/vendor/i18next.min.js"></script>
+        <script src="js/i18n.js"></script>
+        <link rel="stylesheet" href="css/login.css" />
+
+        <script>
+            window.addEventListener("keydown", function (e) {
+                if (
+                    (e.metaKey || e.ctrlKey) &&
+                    (e.key === "r" || e.key === "R")
+                ) {
+                    e.preventDefault();
+                    location.reload();
+                }
+            });
+        </script>
+    </head>
+
+    <body>
+        <div class="login-shell">
+            <section class="login-intro">
+                <div class="login-eyebrow">LOCAL OPERATOR CONSOLE</div>
+                <h1 class="login-title">NiceCLI</h1>
+                <p class="login-description">
+                    Developer-first control for bundled CLIProxyAPI runtime,
+                    authentication assets, provider configuration, and workspace
+                    quota visibility.
+                </p>
+                <div class="login-highlights">
+                    <div class="login-highlight">
+                        <span class="login-highlight-label">Mode</span>
+                        <strong class="login-highlight-value"
+                            >Local only</strong
+                        >
+                    </div>
+                    <div class="login-highlight">
+                        <span class="login-highlight-label">Runtime</span>
+                        <strong class="login-highlight-value"
+                            >Integrated CLIProxyAPI</strong
+                        >
+                    </div>
+                    <div class="login-highlight">
+                        <span class="login-highlight-label">Surface</span>
+                        <strong class="login-highlight-value"
+                            >Control Panel</strong
+                        >
+                    </div>
+                </div>
+            </section>
+
+            <section class="login-panel">
+                <div class="login-panel-header">
+                    <div>
+                        <div class="login-panel-kicker">Runtime</div>
+                        <h2 class="login-panel-title">
+                            Start local environment
+                        </h2>
+                    </div>
+                    <p class="login-panel-copy">
+                        Launch the local NiceCLI stack on this machine and open
+                        the control panel when the runtime is ready.
+                    </p>
+                </div>
+
+                <div class="cards-container">
+                    <div class="card">
+                        <div class="card-icon">Local</div>
+                        <h2 class="card-title">Local</h2>
+                        <p class="card-description">
+                            Start the bundled CLIProxyAPI server on this
+                            machine.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="proxy-section" id="proxy-section">
+                    <div class="proxy-label">Proxy Server (Optional)</div>
+                    <input
+                        type="text"
+                        class="proxy-input"
+                        id="proxy-input"
+                        placeholder="http://host:port or https://host:port or socks5://user:pass@host:port"
+                    />
+                    <div class="proxy-help">
+                        Support HTTP, HTTPS, and SOCKS5 proxy servers.
+                    </div>
+                </div>
+
+                <button
+                    class="continue-btn"
+                    id="continue-btn"
+                    onclick="window.__onConnect && window.__onConnect()"
+                >
+                    Start Local
+                </button>
+            </section>
+        </div>
+
+        <div class="error-toast" id="error-toast"></div>
+        <div class="success-toast" id="success-toast"></div>
+
+        <script src="js/login.js"></script>
+    </body>
+</html>

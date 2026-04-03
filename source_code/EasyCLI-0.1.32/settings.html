@@ -1,0 +1,975 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; script-src 'self' 'unsafe-inline' tauri:; style-src 'self' 'unsafe-inline'; connect-src 'self' http: https: tauri: ipc:"
+        />
+        <meta
+            http-equiv="X-Content-Security-Policy"
+            content="default-src 'self'; script-src 'self' 'unsafe-inline' tauri:; style-src 'self' 'unsafe-inline'; connect-src 'self' http: https: tauri: ipc:"
+        />
+        <title>NiceCLI Control Panel</title>
+        <script src="js/theme-manager.js"></script>
+        <script src="js/vendor/i18next.min.js"></script>
+        <script src="js/i18n.js"></script>
+        <link rel="stylesheet" href="css/settings.css" />
+
+        <script src="js/config-manager.js"></script>
+        <script src="js/utils-zip.js"></script>
+        <script>
+            // Dev convenience: reload on Cmd/Ctrl+R
+            window.addEventListener("keydown", function (e) {
+                if (
+                    (e.metaKey || e.ctrlKey) &&
+                    (e.key === "r" || e.key === "R")
+                ) {
+                    e.preventDefault();
+                    location.reload();
+                }
+            });
+        </script>
+    </head>
+
+    <body>
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-kicker">LOCAL OPERATIONS</div>
+                <h1 class="sidebar-title">NiceCLI</h1>
+            </div>
+            <div class="tabs-container">
+                <div class="tabs-label">Workflows</div>
+                <button class="tab" data-tab="app-settings">Settings</button>
+                <button class="tab active" data-tab="basic">
+                    Basic Setting
+                </button>
+                <button class="tab" data-tab="access-token">
+                    Access Token
+                </button>
+                <button class="tab" data-tab="auth">
+                    Authentication Files
+                </button>
+                <button class="tab" data-tab="api">Third Party API Keys</button>
+                <button class="tab" data-tab="openai">
+                    OpenAI Compatibility
+                </button>
+                <button class="tab" data-tab="workspace-quota">
+                    Workspace Quota
+                </button>
+            </div>
+
+            <!-- Server Status Display -->
+            <div class="server-status-container">
+                <div class="server-status-content">
+                    <span class="server-status-label">Runtime</span>
+                    <span class="server-status-text" id="server-status-text"
+                        >Local</span
+                    >
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- App Settings Content -->
+            <div class="tab-content" id="app-settings-content">
+                <div class="settings-container">
+                    <div class="settings-form app-preferences-form">
+                        <div class="app-preferences-header">
+                            <h2
+                                class="app-preferences-title"
+                                data-i18n="appSettings.title"
+                            >
+                                App Settings
+                            </h2>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <label
+                                    for="app-theme-select"
+                                    data-i18n="appSettings.themeLabel"
+                                >
+                                    Theme
+                                </label>
+                                <span
+                                    class="setting-description"
+                                    data-i18n="appSettings.themeDescription"
+                                >
+                                    Switch between light and dark appearance for
+                                    NiceCLI.
+                                </span>
+                            </div>
+                            <div class="setting-control">
+                                <select
+                                    id="app-theme-select"
+                                    class="form-select"
+                                ></select>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <label
+                                    for="app-language-select"
+                                    data-i18n="appSettings.languageLabel"
+                                >
+                                    Language
+                                </label>
+                                <span
+                                    class="setting-description"
+                                    data-i18n="appSettings.languageDescription"
+                                >
+                                    Choose the display language used by the
+                                    login and settings pages.
+                                </span>
+                            </div>
+                            <div class="setting-control">
+                                <select
+                                    id="app-language-select"
+                                    class="form-select"
+                                ></select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Basic Setting Content -->
+            <div class="tab-content active" id="basic-content">
+                <div class="settings-container">
+                    <div class="section-header">
+                        <div class="section-kicker">Runtime</div>
+                        <h2 class="section-title">Basic settings</h2>
+                        <p class="section-description">
+                            Configure local proxy behavior, startup controls,
+                            retries, and failover rules.
+                        </p>
+                    </div>
+                    <div class="settings-form">
+                        <!-- Local Mode Only Settings -->
+                        <div class="setting-item local-only" id="port-setting">
+                            <div class="setting-label">
+                                <label for="port-input">Port</label>
+                                <span class="setting-description"
+                                    >Server port number (default: 8080)</span
+                                >
+                            </div>
+                            <div class="setting-control">
+                                <input
+                                    type="number"
+                                    id="port-input"
+                                    class="number-input"
+                                    min="1"
+                                    max="65535"
+                                    placeholder="8080"
+                                />
+                            </div>
+                        </div>
+
+                        <div
+                            class="setting-item local-only"
+                            id="auto-start-setting"
+                        >
+                            <div class="setting-label">
+                                <label for="auto-start-switch"
+                                    >Start at Login</label
+                                >
+                                <span class="setting-description"
+                                    >Launch NiceCLI automatically when you log
+                                    in</span
+                                >
+                            </div>
+                            <div class="setting-control">
+                                <label class="switch">
+                                    <input
+                                        type="checkbox"
+                                        id="auto-start-switch"
+                                        class="switch-input"
+                                    />
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <label for="debug-switch">Debug Mode</label>
+                                <span class="setting-description"
+                                    >Enable debug logging for
+                                    troubleshooting</span
+                                >
+                            </div>
+                            <div class="setting-control">
+                                <label class="switch">
+                                    <input
+                                        type="checkbox"
+                                        id="debug-switch"
+                                        class="switch-input"
+                                    />
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <label for="proxy-url-input">Proxy URL</label>
+                                <span class="setting-description"
+                                    >Configure proxy server URL (e.g.,
+                                    socks5://user:pass@127.0.0.1:1080/)</span
+                                >
+                            </div>
+                            <div class="setting-control">
+                                <input
+                                    type="text"
+                                    id="proxy-url-input"
+                                    class="form-input"
+                                    placeholder="Enter proxy URL"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <label for="request-log-switch"
+                                    >Request Log</label
+                                >
+                                <span class="setting-description"
+                                    >Enable request logging for debugging</span
+                                >
+                            </div>
+                            <div class="setting-control">
+                                <label class="switch">
+                                    <input
+                                        type="checkbox"
+                                        id="request-log-switch"
+                                        class="switch-input"
+                                    />
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <label for="request-retry-input"
+                                    >Request Retry</label
+                                >
+                                <span class="setting-description"
+                                    >Number of retry attempts for failed
+                                    requests</span
+                                >
+                            </div>
+                            <div class="setting-control">
+                                <input
+                                    type="number"
+                                    id="request-retry-input"
+                                    class="number-input"
+                                    min="0"
+                                    placeholder="3"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <label for="switch-project-switch"
+                                    >Switch Project on Quota Exceeded</label
+                                >
+                                <span class="setting-description"
+                                    >Automatically switch to another project
+                                    when quota is exceeded</span
+                                >
+                            </div>
+                            <div class="setting-control">
+                                <label class="switch">
+                                    <input
+                                        type="checkbox"
+                                        id="switch-project-switch"
+                                        class="switch-input"
+                                    />
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <label for="switch-preview-model-switch"
+                                    >Switch Preview Model on Quota
+                                    Exceeded</label
+                                >
+                                <span class="setting-description"
+                                    >Automatically switch to preview model when
+                                    quota is exceeded</span
+                                >
+                            </div>
+                            <div class="setting-control">
+                                <label class="switch">
+                                    <input
+                                        type="checkbox"
+                                        id="switch-preview-model-switch"
+                                        class="switch-input"
+                                    />
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Access Token Content -->
+            <div class="tab-content" id="access-token-content">
+                <div class="api-keys-container">
+                    <div class="section-header">
+                        <div class="section-kicker">Credentials</div>
+                        <h2 class="section-title">Access tokens</h2>
+                        <p class="section-description">
+                            Manage local and remote access tokens used by the
+                            runtime.
+                        </p>
+                    </div>
+                    <!-- Access Token Section -->
+                    <div
+                        class="api-section local-only"
+                        id="local-api-keys-section"
+                    >
+                        <div class="api-section-header">
+                            <h3 class="api-section-title">Access Token</h3>
+                            <button
+                                class="add-key-btn"
+                                id="add-local-api-key-btn"
+                            >
+                                Add Key
+                            </button>
+                        </div>
+                        <div class="api-keys-list" id="local-api-keys-list">
+                            <div
+                                class="loading-state"
+                                id="local-api-keys-loading"
+                            >
+                                <div class="loading-spinner"></div>
+                                <span>Loading access tokens...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Auth Files Content -->
+            <div class="tab-content" id="auth-content">
+                <div class="auth-files-container">
+                    <div class="section-header">
+                        <div class="section-kicker">Authentication</div>
+                        <h2 class="section-title">Authentication files</h2>
+                        <p class="section-description">
+                            Review imported auth assets, attach remarks, and
+                            isolate account issues faster.
+                        </p>
+                    </div>
+                    <div class="auth-files-list" id="auth-files-list">
+                        <div class="loading-state" id="auth-loading">
+                            <div class="loading-spinner"></div>
+                            <span>Loading authentication files...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Keys Content -->
+            <div class="tab-content" id="api-content">
+                <div class="api-keys-container">
+                    <div class="section-header">
+                        <div class="section-kicker">Providers</div>
+                        <h2 class="section-title">Third-party API keys</h2>
+                        <p class="section-description">
+                            Maintain provider credentials and request settings
+                            in a single structured workspace.
+                        </p>
+                    </div>
+                    <!-- Gemini API Keys Section -->
+                    <div class="api-section">
+                        <div class="api-section-header">
+                            <h3 class="api-section-title">Gemini API Keys</h3>
+                            <button class="add-key-btn" id="add-gemini-key-btn">
+                                Add Key
+                            </button>
+                        </div>
+                        <div class="api-keys-list" id="gemini-keys-list">
+                            <div class="loading-state" id="gemini-loading">
+                                <div class="loading-spinner"></div>
+                                <span>Loading Gemini API keys...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Codex API Keys Section -->
+                    <div class="api-section">
+                        <div class="api-section-header">
+                            <h3 class="api-section-title">Codex API Keys</h3>
+                            <button class="add-key-btn" id="add-codex-key-btn">
+                                Add Key
+                            </button>
+                        </div>
+                        <div class="api-keys-list" id="codex-keys-list">
+                            <div class="loading-state" id="codex-loading">
+                                <div class="loading-spinner"></div>
+                                <span>Loading Codex API keys...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Claude API Keys Section -->
+                    <div class="api-section">
+                        <div class="api-section-header">
+                            <h3 class="api-section-title">
+                                Claude Code API Keys
+                            </h3>
+                            <button class="add-key-btn" id="add-claude-key-btn">
+                                Add Key
+                            </button>
+                        </div>
+                        <div class="api-keys-list" id="claude-keys-list">
+                            <div class="loading-state" id="claude-loading">
+                                <div class="loading-spinner"></div>
+                                <span>Loading Claude API keys...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OpenAI Compatibility Content -->
+            <div class="tab-content" id="openai-content">
+                <div class="openai-compatibility-container">
+                    <div class="section-header">
+                        <div class="section-kicker">Compatibility</div>
+                        <h2 class="section-title">OpenAI compatibility</h2>
+                        <p class="section-description">
+                            Configure provider adapters, model aliases, and
+                            multi-key routing rules.
+                        </p>
+                    </div>
+                    <div class="openai-section">
+                        <div class="openai-section-header">
+                            <h3 class="openai-section-title">
+                                OpenAI Compatibility Providers
+                            </h3>
+                            <button
+                                class="add-provider-btn"
+                                id="add-provider-btn"
+                            >
+                                Add Provider
+                            </button>
+                        </div>
+                        <div
+                            class="openai-providers-list"
+                            id="openai-providers-list"
+                        >
+                            <div class="loading-state" id="openai-loading">
+                                <div class="loading-spinner"></div>
+                                <span
+                                    >Loading OpenAI compatibility
+                                    providers...</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workspace Quota Content -->
+            <div class="tab-content" id="workspace-quota-content">
+                <div class="workspace-quota-container">
+                    <div class="workspace-quota-panel">
+                        <div class="workspace-quota-panel-header">
+                            <div>
+                                <h3 class="workspace-quota-title">
+                                    Codex Workspace Quota
+                                </h3>
+                                <p class="workspace-quota-description">
+                                    Read quota snapshots per auth and workspace
+                                    without mixing them into request usage
+                                    statistics.
+                                </p>
+                            </div>
+                            <button
+                                class="workspace-quota-refresh-btn"
+                                id="workspace-quota-refresh-btn"
+                            >
+                                Refresh
+                            </button>
+                        </div>
+                        <div class="workspace-quota-toolbar">
+                            <div class="workspace-quota-filter-group">
+                                <label for="workspace-quota-account-filter"
+                                    >Account</label
+                                >
+                                <select
+                                    id="workspace-quota-account-filter"
+                                    class="workspace-quota-select"
+                                >
+                                    <option value="">All accounts</option>
+                                </select>
+                            </div>
+                            <div class="workspace-quota-filter-group">
+                                <label for="workspace-quota-workspace-filter"
+                                    >Workspace</label
+                                >
+                                <select
+                                    id="workspace-quota-workspace-filter"
+                                    class="workspace-quota-select"
+                                >
+                                    <option value="">All workspaces</option>
+                                </select>
+                            </div>
+                            <label class="workspace-quota-toggle">
+                                <input
+                                    type="checkbox"
+                                    id="workspace-quota-stale-only"
+                                />
+                                <span>Only stale</span>
+                            </label>
+                        </div>
+                        <div
+                            class="workspace-quota-list"
+                            id="workspace-quota-list"
+                        >
+                            <div class="loading-state">
+                                <div class="loading-spinner"></div>
+                                <span
+                                    >Loading workspace quota snapshots...</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="error-toast" id="error-toast"></div>
+
+        <!-- Custom Confirmation Dialog -->
+        <div class="modal" id="confirm-modal">
+            <div class="modal-content confirm-modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title" id="confirm-title">
+                        Confirm Delete
+                    </h3>
+                    <button class="modal-close" id="confirm-close">
+                        &times;
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirm-message" id="confirm-message">
+                        Are you sure you want to delete this API key? This
+                        action cannot be undone.
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button
+                        type="button"
+                        class="btn-cancel"
+                        id="confirm-cancel"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-delete"
+                        id="confirm-delete"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Key Modal -->
+        <div class="modal" id="api-key-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title" id="modal-title">Add API Key</h3>
+                    <button class="modal-close" id="modal-close">
+                        &times;
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="api-key-form">
+                        <div class="form-group">
+                            <label for="api-key-input"
+                                >API Key <span class="required">*</span></label
+                            >
+                            <input
+                                type="text"
+                                id="api-key-input"
+                                class="form-input"
+                                placeholder="Enter API key"
+                                required
+                            />
+                        </div>
+                        <div
+                            class="form-group"
+                            id="base-url-group"
+                            style="display: none"
+                        >
+                            <label for="base-url-input"
+                                >Base URL <span class="required">*</span></label
+                            >
+                            <input
+                                type="url"
+                                id="base-url-input"
+                                class="form-input"
+                                placeholder="https://api.example.com"
+                            />
+                        </div>
+                        <div
+                            class="form-group"
+                            id="proxy-url-group"
+                            style="display: none"
+                        >
+                            <label for="api-key-proxy-url-input"
+                                >Proxy URL</label
+                            >
+                            <input
+                                type="text"
+                                id="api-key-proxy-url-input"
+                                class="form-input"
+                                placeholder="socks5://user:pass@host:port"
+                            />
+                            <small class="form-help"
+                                >Optional proxy URL for API requests</small
+                            >
+                        </div>
+                        <div
+                            class="form-group"
+                            id="excluded-models-group"
+                            style="display: none"
+                        >
+                            <label for="excluded-models-input"
+                                >Excluded Models</label
+                            >
+                            <input
+                                type="text"
+                                id="excluded-models-input"
+                                class="form-input"
+                                placeholder="model-a, model-b"
+                            />
+                            <small class="form-help"
+                                >Comma-separated model IDs to exclude</small
+                            >
+                        </div>
+                        <div
+                            class="form-group"
+                            id="headers-group"
+                            style="display: none"
+                        >
+                            <label for="headers-input">Headers (JSON)</label>
+                            <textarea
+                                id="headers-input"
+                                class="form-input"
+                                rows="3"
+                                placeholder='{ "X-Custom-Header": "value" }'
+                            ></textarea>
+                            <small class="form-help"
+                                >Optional request headers in JSON object
+                                format</small
+                            >
+                        </div>
+                    </form>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-cancel" id="modal-cancel">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn-save" id="modal-save">
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Access Token Modal -->
+        <div class="modal" id="access-token-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title" id="access-token-modal-title">
+                        Add Access Token
+                    </h3>
+                    <button class="modal-close" id="access-token-modal-close">
+                        &times;
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="access-token-form">
+                        <div class="form-group">
+                            <label for="access-token-input"
+                                >Access Token
+                                <span class="required">*</span></label
+                            >
+                            <input
+                                type="text"
+                                id="access-token-input"
+                                class="form-input"
+                                placeholder="Enter access token"
+                                required
+                            />
+                        </div>
+                    </form>
+                </div>
+                <div class="form-actions">
+                    <button
+                        type="button"
+                        class="btn-cancel"
+                        id="access-token-modal-cancel"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        class="btn-save"
+                        id="access-token-modal-save"
+                    >
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- OpenAI Provider Modal -->
+        <div class="modal" id="openai-provider-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title" id="provider-modal-title">
+                        Add Provider
+                    </h3>
+                    <button class="modal-close" id="provider-modal-close">
+                        &times;
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="openai-provider-form">
+                        <div class="form-group">
+                            <label for="provider-name-input"
+                                >Provider Name
+                                <span class="required">*</span></label
+                            >
+                            <input
+                                type="text"
+                                id="provider-name-input"
+                                class="form-input"
+                                placeholder="e.g., openrouter"
+                                required
+                            />
+                        </div>
+                        <div class="form-group">
+                            <label for="provider-base-url-input"
+                                >Base URL <span class="required">*</span></label
+                            >
+                            <input
+                                type="url"
+                                id="provider-base-url-input"
+                                class="form-input"
+                                placeholder="https://api.example.com/v1"
+                                required
+                            />
+                        </div>
+                        <div class="form-group">
+                            <label
+                                >API Keys <span class="required">*</span></label
+                            >
+                            <div
+                                id="api-keys-container"
+                                class="dynamic-input-container"
+                            >
+                                <div class="dynamic-input-row">
+                                    <input
+                                        type="text"
+                                        class="form-input dynamic-input"
+                                        placeholder="Enter API key"
+                                        required
+                                    />
+                                    <input
+                                        type="text"
+                                        class="form-input dynamic-input"
+                                        placeholder="Proxy URL (optional)"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="add-row-btn"
+                                        onclick="addApiKeyRow()"
+                                    >
+                                        +
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="remove-row-btn"
+                                        onclick="
+                                            removeApiKeyRow(this.parentElement)
+                                        "
+                                    >
+                                        −
+                                    </button>
+                                </div>
+                            </div>
+                            <small class="form-help"
+                                >Enter API key and optional proxy URL per
+                                row</small
+                            >
+                        </div>
+                        <div class="form-group">
+                            <label>Models</label>
+                            <div
+                                id="models-container"
+                                class="dynamic-input-container"
+                            >
+                                <div class="dynamic-input-row">
+                                    <input
+                                        type="text"
+                                        class="form-input dynamic-input"
+                                        placeholder="Model name"
+                                    />
+                                    <input
+                                        type="text"
+                                        class="form-input dynamic-input"
+                                        placeholder="Alias name"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="add-row-btn"
+                                        onclick="addModelRow()"
+                                    >
+                                        +
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="remove-row-btn"
+                                        onclick="
+                                            removeModelRow(this.parentElement)
+                                        "
+                                    >
+                                        −
+                                    </button>
+                                </div>
+                            </div>
+                            <small class="form-help"
+                                >Enter model name and alias name. Leave empty if
+                                no custom models.</small
+                            >
+                        </div>
+                        <div class="form-group">
+                            <label for="provider-headers-input"
+                                >Headers (JSON)</label
+                            >
+                            <textarea
+                                id="provider-headers-input"
+                                class="form-input"
+                                rows="3"
+                                placeholder='{ "X-Provider": "openrouter" }'
+                            ></textarea>
+                            <small class="form-help"
+                                >Optional request headers in JSON object
+                                format</small
+                            >
+                        </div>
+                        <div class="form-actions">
+                            <button
+                                type="button"
+                                class="btn-cancel"
+                                id="provider-modal-cancel"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                class="btn-save"
+                                id="provider-modal-save"
+                            >
+                                Save
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-bar">
+            <div class="action-bar-left">
+                <button
+                    class="select-all-btn"
+                    id="select-all-btn"
+                    style="display: none"
+                >
+                    Select All
+                </button>
+            </div>
+            <div class="action-bar-right">
+                <button class="reset-btn" id="reset-btn">Reset</button>
+                <button class="apply-btn" id="apply-btn">Apply</button>
+                <div
+                    class="dropdown-container"
+                    id="new-dropdown"
+                    style="display: none"
+                >
+                    <button class="new-btn" id="new-btn">New</button>
+                    <div class="dropdown-menu" id="dropdown-menu">
+                        <div class="dropdown-item" data-type="gemini">
+                            Gemini CLI
+                        </div>
+                        <div
+                            class="dropdown-item"
+                            data-type="gemini-web"
+                            style="display: none"
+                        >
+                            Gemini WEB
+                        </div>
+                        <div class="dropdown-item" data-type="claude">
+                            Claude Code
+                        </div>
+                        <div class="dropdown-item" data-type="codex">Codex</div>
+                        <div class="dropdown-item" data-type="qwen">
+                            Qwen Code
+                        </div>
+                        <div class="dropdown-item" data-type="vertex">
+                            Vertex
+                        </div>
+                        <div class="dropdown-item" data-type="iflow">iFlow</div>
+                        <div class="dropdown-item" data-type="antigravity">
+                            Antigravity
+                        </div>
+                        <div class="dropdown-item" data-type="local">
+                            Local File
+                        </div>
+                    </div>
+                </div>
+                <button
+                    class="download-btn"
+                    id="download-btn"
+                    style="display: none"
+                >
+                    Download
+                </button>
+                <button
+                    class="delete-btn"
+                    id="delete-btn"
+                    style="display: none"
+                >
+                    Delete
+                </button>
+            </div>
+        </div>
+
+        <script src="js/settings-utils.js"></script>
+        <script src="js/settings-core.js"></script>
+        <script src="js/settings-confirm.js"></script>
+        <script src="js/settings-auth-files.js"></script>
+        <script src="js/settings-app-preferences.js"></script>
+        <script src="js/settings-tabs.js"></script>
+        <script src="js/settings-ipc.js"></script>
+        <script src="js/settings-init.js"></script>
+        <script src="js/settings.js"></script>
+    </body>
+</html>

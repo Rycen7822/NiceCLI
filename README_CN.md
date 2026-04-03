@@ -76,11 +76,6 @@ EasyCLI 是一个很好的基础，但这个分支有意做得更聚焦。NiceCL
 - `source_code/EasyCLI-0.1.32`：NiceCLI 桌面前端与 Tauri 壳层
 - `source_code/CLIProxyAPI-6.9.7`：内嵌使用的 CLIProxyAPI 后端分支
 
-当前工作区中保留的参考仓库：
-
-- `EasyCLI-main`：上游 / 参考用 EasyCLI 仓库
-- `tldraw-main`：README 风格与结构参考仓库
-
 本地开发前提：
 
 - Node.js 18+

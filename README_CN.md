@@ -23,8 +23,11 @@
 </p>
 
 <p align="center">
-  <img src="./local_login.png" alt="NiceCLI 本地启动页" width="48%" />
-  <img src="./codex_workspace_quota.png" alt="NiceCLI Workspace Quota 面板" width="48%" />
+  <img src="./local_login.png" alt="NiceCLI 本地启动页" width="88%" />
+</p>
+
+<p align="center">
+  <img src="./codex_workspace_quota.png" alt="NiceCLI Workspace Quota 面板" width="88%" />
 </p>
 
 ## 功能亮点

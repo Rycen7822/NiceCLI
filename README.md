@@ -23,8 +23,11 @@
 </p>
 
 <p align="center">
-  <img src="./local_login.png" alt="NiceCLI local login" width="48%" />
-  <img src="./codex_workspace_quota.png" alt="NiceCLI workspace quota" width="48%" />
+  <img src="./local_login.png" alt="NiceCLI local login" width="88%" />
+</p>
+
+<p align="center">
+  <img src="./codex_workspace_quota.png" alt="NiceCLI workspace quota" width="88%" />
 </p>
 
 ## Feature highlights

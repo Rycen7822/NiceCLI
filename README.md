@@ -76,10 +76,6 @@ This workspace currently uses the following active source roots:
 - `source_code/EasyCLI-0.1.32` - NiceCLI desktop frontend and Tauri shell
 - `source_code/CLIProxyAPI-6.9.7` - embedded CLIProxyAPI backend fork
 
-Reference repositories kept in the workspace:
-
-- `EasyCLI-main` - upstream/reference EasyCLI repository
-- `tldraw-main` - README/style reference repository
 
 Prerequisites for local development:
 

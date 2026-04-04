@@ -36,4 +36,4 @@ rand = "0.8"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.52"
+winreg = "0.55"

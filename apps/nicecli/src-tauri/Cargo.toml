@@ -30,7 +30,7 @@ image = { version = "0.24", default-features = false, features = ["png"] }
 ico = "0.3"
 icns = "0.3"
 rfd = "0.14"
-rand = "0.8"
+rand = "0.10"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

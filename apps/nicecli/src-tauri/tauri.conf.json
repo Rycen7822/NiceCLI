@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NiceCLI",
+  "version": "0.3.6",
+  "identifier": "com.nicecli.desktop",
+  "build": {
+    "beforeBuildCommand": "node src-tauri/prepare-web.js",
+    "beforeDevCommand": "node src-tauri/watch-web.js",
+    "frontendDist": "../dist-web",
+    "devUrl": null,
+    "removeUnusedCommands": true
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": ["main"]
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "NiceCLI",
+        "width": 1116,
+        "height": 720,
+        "minWidth": 912,
+        "minHeight": 624,
+        "resizable": true,
+        "dragDropEnabled": true,
+        "visible": true,
+        "url": "login.html"
+      }
+    ]
+  },
+  "bundle": {
+    "active": false,
+    "targets": ["dmg", "app", "nsis", "deb"],
+    "icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"]
+  }
+}

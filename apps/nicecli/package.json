@@ -1,0 +1,20 @@
+{
+  "name": "nicecli",
+  "version": "0.3.6",
+  "description": "NiceCLI desktop shell with embedded CLIProxyAPI runtime",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build --no-bundle",
+    "tauri": "tauri",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "NiceCLI Contributors",
+  "license": "MIT",
+  "dependencies": {
+    "i18next": "^26.0.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
+    "chokidar": "^4.0.3"
+  }
+}

@@ -1,0 +1,15 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.log
+
+# NiceCLI generated assets
+/apps/nicecli/node_modules/
+/apps/nicecli/dist-web/
+/apps/nicecli/src-tauri/target/
+/apps/nicecli/src-tauri/bundled/
+
+# Optional local backend state
+/apps/cliproxyapi/.env

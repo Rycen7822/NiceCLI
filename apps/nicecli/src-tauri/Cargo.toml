@@ -27,7 +27,7 @@ thiserror = "1.0"
 parking_lot = "0.12"
 once_cell = "1.18"
 image = { version = "0.25", default-features = false, features = ["png"] }
-ico = "0.3"
+ico = "0.5"
 icns = "0.3"
 rfd = "0.14"
 rand = "0.10"

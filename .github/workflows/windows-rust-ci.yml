@@ -1,0 +1,68 @@
+name: windows-rust-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/nicecli/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.1
+          components: rustfmt, clippy
+
+      - name: Install frontend dependencies
+        working-directory: apps/nicecli
+        run: npm ci
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Lint Rust workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Lint Tauri host crate
+        run: cargo clippy --manifest-path apps/nicecli/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Run repository build entrypoint
+        run: ./build-windows.ps1 -SkipNpmInstall
+
+      - name: Test runtime crate
+        run: cargo test -p nicecli-runtime
+
+      - name: Test quota crate
+        run: cargo test -p nicecli-quota
+
+      - name: Test backend crate
+        run: cargo test -p nicecli-backend
+
+      - name: Test contract fixtures
+        run: cargo test -p nicecli-contract-tests
+
+      - name: Test Tauri host crate
+        run: cargo test --manifest-path apps/nicecli/src-tauri/Cargo.toml
+
+      - name: Smoke local runtime host
+        run: cargo run --manifest-path apps/nicecli/src-tauri/Cargo.toml -- --smoke-backend-host
+
+      - name: Smoke tray host
+        working-directory: apps/nicecli
+        run: npm run smoke:tray-host

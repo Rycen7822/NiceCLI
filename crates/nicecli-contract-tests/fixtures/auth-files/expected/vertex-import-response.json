@@ -1,0 +1,23 @@
+{
+  "response": {
+    "status": "ok",
+    "file": "vertex-vertex-demo-project.json",
+    "auth_file_ends_with_created": true,
+    "project_id": "vertex-demo-project",
+    "email": "vertex@example.com",
+    "location": "asia-east1"
+  },
+  "auth_file": {
+    "file_name": "vertex-vertex-demo-project.json",
+    "id_matches_file_name": true,
+    "provider": "vertex",
+    "type": "vertex",
+    "project_id": "vertex-demo-project",
+    "email": "vertex@example.com",
+    "location": "asia-east1",
+    "label": "vertex-demo-project (vertex@example.com)",
+    "service_account_project_id": "vertex-demo-project",
+    "service_account_client_email": "vertex@example.com",
+    "service_account_private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIBOQIBAAJBALOTg53yXe1zGqKxwQrKI8TN2/ojnrN8UETSbaLgWr4KfSY0J2Ep\n4ENuPQn0a+1QFjmxEnJJAwj0DhpdM4hbAekCAwEAAQJANyWP/8tUaP02KsxnugaF\noYSOj2ys6fW9OMVegexgMYfGsEKdUSh9CJDpZx6azk+I/XJWaiDigkKMrM1iqxQD\neQIhAO2fVDCDehcoC56/Q7mxbnP0+Q/65naz198N58aWDeQbAiEAwXbu2hi1lVlh\n7o2/zvGX0RCm937zECwJcsCFNHbiaksCIA2W4xWzLzRL0f5OKe1gvFRdWjETxEJd\nnqbfALZWtoypAiAJlcnptlWwy5fliNJa/29FJW0QUBLc10G0lMNEwSsglwIgEuM2\nMCAJraczq4egzLA9pHORkkixHQ7AocxLhZjnVGA=\n-----END RSA PRIVATE KEY-----"
+  }
+}

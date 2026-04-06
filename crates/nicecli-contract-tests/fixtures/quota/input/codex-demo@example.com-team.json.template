@@ -1,0 +1,12 @@
+{
+  "provider": "codex",
+  "id": "auth-a",
+  "label": "Primary",
+  "metadata": {
+    "email": "demo@example.com",
+    "access_token": "token-123"
+  },
+  "attributes": {
+    "base_url": "http://__USAGE_SERVER__/backend-api"
+  }
+}

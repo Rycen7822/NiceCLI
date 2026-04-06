@@ -1,0 +1,25 @@
+{
+  "provider": "codex",
+  "snapshots": [
+    {
+      "provider": "codex",
+      "auth_id": "auth-a",
+      "auth_label": "Primary",
+      "account_email": "demo@example.com",
+      "workspace_id": "org_secondary",
+      "workspace_name": "Workspace Beta",
+      "workspace_type": "business",
+      "source": "usage_dashboard",
+      "stale": true,
+      "error": "codex quota returned 500: {\"message\":\"server down\"}",
+      "snapshot": {
+        "plan_type": "team",
+        "primary": {
+          "used_percent": 80,
+          "window_minutes": 300,
+          "resets_at": 1760003600
+        }
+      }
+    }
+  ]
+}

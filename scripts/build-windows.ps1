@@ -10,18 +10,22 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
 }
 
 $niceCliRoot = Join-Path $WorkspaceRoot "apps\nicecli"
-
 if (-not (Test-Path $niceCliRoot)) {
     throw "NiceCLI app directory not found: $niceCliRoot"
 }
-
 Write-Host "Preparing frontend assets"
 Push-Location $niceCliRoot
 try {
     if (-not $SkipNpmInstall -or -not (Test-Path (Join-Path $niceCliRoot "node_modules"))) {
         & npm ci
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm ci failed"
+        }
     }
     & npm run build
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm run build failed"
+    }
 }
 finally {
     Pop-Location

@@ -1,0 +1,15 @@
+{
+  "data": [
+    {
+      "id": "claude-test",
+      "object": "model",
+      "created_at": 1730000100,
+      "owned_by": "anthropic",
+      "type": "model",
+      "display_name": "Claude Test"
+    }
+  ],
+  "has_more": false,
+  "first_id": "claude-test",
+  "last_id": "claude-test"
+}

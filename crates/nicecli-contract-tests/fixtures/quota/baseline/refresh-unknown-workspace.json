@@ -1,0 +1,17 @@
+{
+  "provider": "codex",
+  "snapshots": [
+    {
+      "provider": "codex",
+      "auth_id": "auth-a",
+      "auth_label": "Primary",
+      "account_email": "demo@example.com",
+      "workspace_id": "org_missing",
+      "workspace_name": "Current Workspace",
+      "workspace_type": "business",
+      "source": "usage_dashboard",
+      "stale": true,
+      "error": "codex quota returned 400: {\"message\":\"unexpected quota request: auth=Bearer token-123, workspace=org_missing\"}"
+    }
+  ]
+}

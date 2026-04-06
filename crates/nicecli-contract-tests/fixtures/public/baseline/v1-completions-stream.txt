@@ -1,0 +1,8 @@
+data: {"id":"chatcmpl-completions-stream","object":"text_completion","created":1730000450,"model":"gpt-test","choices":[{"finish_reason":"","index":0,"text":"hello "}]}
+
+data: {"id":"chatcmpl-completions-stream","object":"text_completion","created":1730000450,"model":"gpt-test","choices":[{"finish_reason":"","index":0,"text":"world"}]}
+
+data: {"id":"chatcmpl-completions-stream","object":"text_completion","created":1730000450,"model":"gpt-test","choices":[{"finish_reason":"stop","index":0,"text":""}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}
+
+data: [DONE]
+

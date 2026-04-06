@@ -1,0 +1,5 @@
+{
+  "name": "models/gemini-2.5-pro-exp",
+  "version": "2026-04",
+  "inputTokenLimit": 1048576
+}

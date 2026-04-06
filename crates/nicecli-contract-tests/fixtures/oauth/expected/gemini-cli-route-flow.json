@@ -1,0 +1,48 @@
+{
+  "start": {
+    "status": "ok",
+    "state_present": true,
+    "url": {
+      "scheme": "https",
+      "host": "gemini.local",
+      "path": "/oauth/authorize",
+      "stable_query": {
+        "access_type": "offline",
+        "client_id": "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
+        "prompt": "consent",
+        "redirect_uri": "http://localhost:8085/oauth2callback",
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile"
+      },
+      "dynamic_query_keys": [
+        "state"
+      ]
+    }
+  },
+  "callback": {
+    "status": 200,
+    "success_text": true
+  },
+  "auth_file_name": "gemini-gemini-route@example.com-manual-route-project-456.json",
+  "auth_file": {
+    "file_name": "gemini-gemini-route@example.com-manual-route-project-456.json",
+    "id_matches_file_name": true,
+    "provider": "gemini",
+    "type": "gemini",
+    "email": "gemini-route@example.com",
+    "project_id": "manual-route-project-456",
+    "auto": false,
+    "checked": true,
+    "access_token": "gemini-route-access-token",
+    "refresh_token": "gemini-route-refresh-token",
+    "token_type": "Bearer",
+    "token_present": true,
+    "token_refresh_token_matches": true,
+    "token_client_id_present": true,
+    "token_expiry_present": true,
+    "expiry_present": true
+  },
+  "status_after_callback": {
+    "status": "ok"
+  }
+}

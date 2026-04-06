@@ -1,0 +1,23 @@
+[advisories]
+yanked = "warn"
+unmaintained = "workspace"
+unsound = "workspace"
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+multiple-versions-include-dev = true
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "simplest-path"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "deny"
+required-git-spec = "rev"
+allow-registry = [
+  "https://github.com/rust-lang/crates.io-index",
+  "sparse+https://index.crates.io/",
+]

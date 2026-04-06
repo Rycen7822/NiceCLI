@@ -1,0 +1,32 @@
+{
+  "openai-compatibility": [
+    {
+      "name": "demo",
+      "prefix": "team",
+      "base-url": "https://openai.local",
+      "api-key-entries": [
+        {
+          "api-key": "openai-1",
+          "proxy-url": " http://127.0.0.1:7890 "
+        },
+        {
+          "api-key": "",
+          "proxy-url": "http://127.0.0.1:7891"
+        }
+      ],
+      "models": [
+        {
+          "name": " gpt-5 ",
+          "alias": " demo-gpt5 "
+        },
+        {
+          "name": "",
+          "alias": ""
+        }
+      ],
+      "headers": {
+        "X-Test": "demo"
+      }
+    }
+  ]
+}

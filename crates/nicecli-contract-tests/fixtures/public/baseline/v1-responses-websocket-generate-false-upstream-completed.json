@@ -1,0 +1,16 @@
+{
+  "type": "response.completed",
+  "response": {
+    "id": "resp_ws_generate_false",
+    "object": "response",
+    "created_at": 1730000265,
+    "model": "gpt-test",
+    "status": "completed",
+    "output": [],
+    "usage": {
+      "input_tokens": 1,
+      "output_tokens": 0,
+      "total_tokens": 1
+    }
+  }
+}

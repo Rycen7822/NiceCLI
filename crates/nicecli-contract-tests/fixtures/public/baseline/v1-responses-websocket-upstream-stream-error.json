@@ -1,0 +1,12 @@
+{
+  "type": "error",
+  "status": 429,
+  "headers": {
+    "Retry-After": "30"
+  },
+  "error": {
+    "message": "upstream rate limit",
+    "type": "rate_limit_error",
+    "code": "rate_limit_exceeded"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "response.created",
+  "sequence_number": 0,
+  "response": {
+    "id": "resp_prewarm_dynamic",
+    "object": "response",
+    "created_at": 1700000000,
+    "status": "in_progress",
+    "background": false,
+    "error": null,
+    "output": [],
+    "model": "gpt-test"
+  }
+}

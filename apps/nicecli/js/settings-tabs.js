@@ -10,7 +10,6 @@ const tabScriptGroups = {
     "js/settings-auth-gemini.js",
     "js/settings-auth-qwen.js",
     "js/settings-auth-vertex.js",
-    "js/settings-auth-iflow.js",
     "js/settings-auth-antigravity.js",
   ],
   "access-token": ["js/settings-access-token.js"],

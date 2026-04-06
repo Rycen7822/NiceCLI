@@ -1,0 +1,8 @@
+{
+  "type": "error",
+  "status": 400,
+  "error": {
+    "message": "websocket request received before response.create",
+    "type": "invalid_request_error"
+  }
+}

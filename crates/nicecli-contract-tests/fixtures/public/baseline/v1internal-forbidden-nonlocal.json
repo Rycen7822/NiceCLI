@@ -1,0 +1,6 @@
+{
+  "error": {
+    "message": "CLI reply only allow local access",
+    "type": "forbidden"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "provider": "codex",
+  "snapshots": [
+    {
+      "auth_id": "auth-a",
+      "auth_label": "Primary",
+      "auth_note": "Renamed Workspace Note",
+      "auth_file_name": "codex-demo@example.com-team.json",
+      "account_email": "demo@example.com",
+      "account_plan": "team",
+      "workspace_id": "org_secondary",
+      "workspace_name": "Workspace Beta",
+      "workspace_type": "business",
+      "stale": false,
+      "error": null,
+      "snapshot": {
+        "plan_type": "team",
+        "primary": {
+          "used_percent": 80.0,
+          "window_minutes": 300,
+          "resets_at": 1760003600
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "start": {
+    "status": "ok",
+    "state_present": true,
+    "url": {
+      "scheme": "https",
+      "host": "chat.qwen.ai",
+      "path": "/device",
+      "stable_query": {
+        "user_code": "ABCD"
+      },
+      "dynamic_query_keys": []
+    }
+  },
+  "auth_file": {
+    "file_name_prefix_ok": true,
+    "file_name_suffix_ok": true,
+    "id_matches_file_name": true,
+    "provider": "qwen",
+    "type": "qwen",
+    "email_present": true,
+    "email_is_digits": true,
+    "access_token": "access-token-123",
+    "refresh_token": "refresh-token-456",
+    "resource_url": "https://dashscope.aliyuncs.com",
+    "last_refresh_present": true,
+    "expired_present": true
+  },
+  "status_after_callback": {
+    "status": "ok"
+  }
+}

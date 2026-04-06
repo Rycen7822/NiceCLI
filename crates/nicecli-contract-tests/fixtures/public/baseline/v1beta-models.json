@@ -1,0 +1,14 @@
+{
+  "models": [
+    {
+      "name": "models/gemini-2.5-pro-exp",
+      "version": "2026-04",
+      "displayName": "gemini-2.5-pro-exp",
+      "description": "gemini-2.5-pro-exp",
+      "inputTokenLimit": 1048576,
+      "supportedGenerationMethods": [
+        "generateContent"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "state_present": true,
+  "url": {
+    "scheme": "https",
+    "host": "chat.qwen.ai",
+    "path": "/device",
+    "stable_query": {
+      "user_code": "ABCD"
+    },
+    "dynamic_query_keys": []
+  }
+}

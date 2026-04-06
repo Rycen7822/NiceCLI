@@ -1,0 +1,8 @@
+{
+  "type": "error",
+  "status": 408,
+  "error": {
+    "message": "stream closed before response.completed",
+    "type": "invalid_request_error"
+  }
+}

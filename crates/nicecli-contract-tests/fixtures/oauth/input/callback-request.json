@@ -1,0 +1,4 @@
+{
+  "provider": "openai",
+  "redirect_url": "http://127.0.0.1:1455/codex/callback?state=codex-callback-01&code=code-123"
+}

@@ -1,0 +1,39 @@
+# NiceCLI local runtime default configuration.
+# This file is created automatically on first launch.
+
+host: "127.0.0.1"
+port: 8317
+
+tls:
+  enable: false
+  cert: ""
+  key: ""
+
+remote-management:
+  allow-remote: false
+  secret-key: ""
+  disable-control-panel: true
+
+auth-dir: "__NICECLI_AUTH_DIR__"
+
+debug: false
+logging-to-file: false
+usage-statistics-enabled: false
+
+proxy-url: ""
+force-model-prefix: false
+passthrough-headers: false
+
+request-retry: 3
+max-retry-credentials: 0
+max-retry-interval: 30
+
+quota-exceeded:
+  switch-project: true
+  switch-preview-model: true
+
+routing:
+  strategy: "round-robin"
+
+ws-auth: false
+nonstream-keepalive-interval: 0

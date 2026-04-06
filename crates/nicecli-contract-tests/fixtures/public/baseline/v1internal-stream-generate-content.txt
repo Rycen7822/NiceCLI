@@ -1,0 +1,4 @@
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"hello"}]}}]}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":" world"}]}}]}
+

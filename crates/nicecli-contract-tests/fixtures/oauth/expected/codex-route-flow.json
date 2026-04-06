@@ -1,0 +1,45 @@
+{
+  "start": {
+    "status": "ok",
+    "state_present": true,
+    "url": {
+      "scheme": "https",
+      "host": "codex.local",
+      "path": "/oauth/authorize",
+      "stable_query": {
+        "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+        "response_type": "code",
+        "redirect_uri": "http://localhost:1455/auth/callback",
+        "scope": "openid email profile offline_access",
+        "code_challenge_method": "S256",
+        "prompt": "login",
+        "id_token_add_organizations": "true",
+        "codex_cli_simplified_flow": "true"
+      },
+      "dynamic_query_keys": [
+        "code_challenge",
+        "state"
+      ]
+    }
+  },
+  "callback": {
+    "status": 200,
+    "success_text": true
+  },
+  "auth_file_name": "codex-6c1edc29-demo@example.com-team.json",
+  "auth_file": {
+    "provider": "codex",
+    "type": "codex",
+    "email": "demo@example.com",
+    "account_id": "org_default",
+    "account_plan": "team",
+    "access_token": "access-token-123",
+    "refresh_token": "refresh-token-456",
+    "id_token_present": true,
+    "expired_present": true,
+    "note": "Workspace A"
+  },
+  "status_after_callback": {
+    "status": "ok"
+  }
+}

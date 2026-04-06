@@ -1,0 +1,10 @@
+{
+  "oauth-model-alias": {
+    "codex": [
+      {
+        "name": "gpt-5",
+        "alias": "demo-gpt5"
+      }
+    ]
+  }
+}

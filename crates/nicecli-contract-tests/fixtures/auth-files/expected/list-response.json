@@ -1,0 +1,14 @@
+{
+  "files": [
+    {
+      "id": "codex-demo@example.com-team.json",
+      "name": "codex-demo@example.com-team.json",
+      "type": "codex",
+      "provider": "codex",
+      "source": "file",
+      "email": "demo@example.com",
+      "note": "Workspace A",
+      "priority": 7
+    }
+  ]
+}

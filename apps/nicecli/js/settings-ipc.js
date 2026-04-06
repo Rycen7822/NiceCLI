@@ -16,24 +16,24 @@ function showProcessClosedError(message) {
 if (window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen("process-closed", (event) => {
     const data = event?.payload || {};
-    console.log("CLIProxyAPI process closed:", data);
-    showProcessClosedError(data.message || "CLIProxyAPI process has closed");
+    console.log("Local runtime closed:", data);
+    showProcessClosedError(data.message || "Local runtime has closed");
   });
 
   window.__TAURI__.event.listen("process-exit-error", (event) => {
     const errorData = event?.payload || {};
-    console.error("CLIProxyAPI process exited abnormally:", errorData);
+    console.error("Local runtime exited abnormally:", errorData);
     showProcessClosedError(
-      `CLIProxyAPI process exited abnormally, exit code: ${errorData.code}`,
+      `Local runtime exited abnormally, exit code: ${errorData.code}`,
     );
   });
 
-  window.__TAURI__.event.listen("cliproxyapi-restarted", (event) => {
+  window.__TAURI__.event.listen("local-runtime-restarted", (event) => {
     const data = event?.payload || {};
-    console.log("CLIProxyAPI process restarted successfully:", data);
+    console.log("Local runtime restarted successfully:", data);
     if (data.password) {
       localStorage.setItem("local-management-key", data.password);
     }
-    showSuccessMessage("CLIProxyAPI process restarted successfully!");
+    showSuccessMessage("Local runtime restarted successfully!");
   });
 }

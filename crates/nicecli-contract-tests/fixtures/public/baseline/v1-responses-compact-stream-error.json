@@ -1,0 +1,6 @@
+{
+  "error": {
+    "message": "Streaming not supported for compact responses",
+    "type": "invalid_request_error"
+  }
+}

@@ -299,7 +299,6 @@ function createNewAuthFile(type) {
     codex: nicecliT("authFiles.newTypes.codex"),
     qwen: nicecliT("authFiles.newTypes.qwen"),
     vertex: nicecliT("authFiles.newTypes.vertex"),
-    iflow: nicecliT("authFiles.newTypes.iflow"),
     antigravity: nicecliT("authFiles.newTypes.antigravity"),
     local: nicecliT("authFiles.newTypes.local"),
   };
@@ -320,8 +319,6 @@ function createNewAuthFile(type) {
     showVertexImportDialog();
   } else if (type === "antigravity") {
     startAntigravityAuthFlow();
-  } else if (type === "iflow") {
-    startIFlowCookieFlow();
   } else {
     console.log(`Creating new ${typeNames[type]} auth file`);
     showSuccessMessage(`Creating new ${typeNames[type]} auth file...`);

@@ -1,0 +1,28 @@
+[package]
+name = "nicecli-backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+axum.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+home.workspace = true
+jsonwebtoken.workspace = true
+nicecli-auth = { path = "../nicecli-auth" }
+nicecli-config = { path = "../nicecli-config" }
+nicecli-models = { path = "../nicecli-models" }
+nicecli-quota = { path = "../nicecli-quota" }
+nicecli-runtime = { path = "../nicecli-runtime" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+tempfile = "3"
+tokio-tungstenite = "0.24"
+tower = { version = "0.5", features = ["util"] }

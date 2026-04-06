@@ -1,0 +1,21 @@
+[package]
+name = "nicecli-contract-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nicecli-backend = { path = "../nicecli-backend" }
+
+[dev-dependencies]
+async-trait.workspace = true
+axum.workspace = true
+base64.workspace = true
+nicecli-auth = { path = "../nicecli-auth" }
+nicecli-quota = { path = "../nicecli-quota" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio.workspace = true
+tempfile = "3"
+tower = "0.5"
+url.workspace = true

@@ -1,0 +1,43 @@
+{
+  "start": {
+    "status": "ok",
+    "state_present": true,
+    "url": {
+      "scheme": "https",
+      "host": "antigravity.local",
+      "path": "/oauth2/authorize",
+      "stable_query": {
+        "access_type": "offline",
+        "client_id": "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
+        "prompt": "consent",
+        "redirect_uri": "http://localhost:51121/oauth-callback",
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs"
+      },
+      "dynamic_query_keys": [
+        "state"
+      ]
+    }
+  },
+  "callback": {
+    "status": 200,
+    "success_text": true
+  },
+  "auth_file_name": "antigravity-antigravity-route@example.com.json",
+  "auth_file": {
+    "file_name": "antigravity-antigravity-route@example.com.json",
+    "id_matches_file_name": true,
+    "provider": "antigravity",
+    "type": "antigravity",
+    "email": "antigravity-route@example.com",
+    "project_id": "route-project-123",
+    "access_token": "antigravity-access-token",
+    "refresh_token": "antigravity-refresh-token",
+    "expires_in": 3600,
+    "timestamp_present": true,
+    "expired_present": true
+  },
+  "status_after_callback": {
+    "status": "ok"
+  }
+}

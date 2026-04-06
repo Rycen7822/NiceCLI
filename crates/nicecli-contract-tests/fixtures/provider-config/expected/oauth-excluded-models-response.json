@@ -1,0 +1,7 @@
+{
+  "oauth-excluded-models": {
+    "codex": [
+      "gpt-5"
+    ]
+  }
+}

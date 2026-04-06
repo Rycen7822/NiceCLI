@@ -1,0 +1,18 @@
+{
+  "id": "chatcmpl-completions",
+  "object": "text_completion",
+  "created": 1730000400,
+  "model": "gpt-test",
+  "choices": [
+    {
+      "index": 0,
+      "text": "hello completion",
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 4,
+    "completion_tokens": 2,
+    "total_tokens": 6
+  }
+}

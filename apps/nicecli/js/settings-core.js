@@ -337,11 +337,11 @@ async function applyAllSettings() {
 
       if (portChanged) {
         console.log(
-          "Port configuration has changed, need to restart CLIProxyAPI process",
+          "Port configuration has changed, need to restart the local runtime",
         );
         showSuccessMessage(nicecliT("toasts.portRestartSaved"));
         if (window.__TAURI__?.core?.invoke) {
-          window.__TAURI__.core.invoke("restart_cliproxyapi");
+          window.__TAURI__.core.invoke("restart_local_runtime");
         }
       }
     } else {

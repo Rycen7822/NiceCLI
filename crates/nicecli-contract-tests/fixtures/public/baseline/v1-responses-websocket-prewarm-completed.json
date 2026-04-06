@@ -1,0 +1,19 @@
+{
+  "type": "response.completed",
+  "sequence_number": 1,
+  "response": {
+    "id": "resp_prewarm_dynamic",
+    "object": "response",
+    "created_at": 1700000000,
+    "status": "completed",
+    "background": false,
+    "error": null,
+    "output": [],
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0
+    },
+    "model": "gpt-test"
+  }
+}

@@ -44,7 +44,7 @@
         appSettings: {
           title: "App Settings",
           description:
-            "Adjust the local NiceCLI experience without changing CLIProxyAPI server configuration.",
+            "Adjust the local NiceCLI experience without changing local runtime configuration.",
           themeLabel: "Theme",
           themeDescription:
             "Switch between light and dark appearance for NiceCLI.",
@@ -60,12 +60,12 @@
           pageTitle: "NiceCLI",
           localTitle: "Local",
           localDescription:
-            "Start the bundled CLIProxyAPI server on this machine.",
+            "Start the bundled NiceCLI local runtime on this machine.",
           proxyLabel: "Proxy Server (Optional):",
           proxyPlaceholder:
             "http://host:port or https://host:port or socks5://user:pass@host:port",
           proxyHelp: "Support HTTP, HTTPS, and SOCKS5 proxy servers",
-          progressDownloading: "Downloading CLIProxyAPI...",
+          progressDownloading: "Downloading NiceCLI runtime...",
           updateDialogTitle: "New Version Found",
           updateDialogMessage:
             "A new version is available. Do you want to update to the latest version?",
@@ -74,26 +74,26 @@
           startingLocal: "Starting local mode...",
           invalidProxyFormat:
             "Invalid proxy format. Supported formats: http://host:port, https://host:port, socks5://host:port, http://user:pass@host:port, https://user:pass@host:port, socks5://user:pass@host:port",
-          processStartFailed: "CLIProxyAPI process start failed",
-          processStartError: "CLIProxyAPI process start error",
+          processStartFailed: "Local runtime start failed",
+          processStartError: "Local runtime start error",
           checkVersionFailed: "Failed to check version: {{error}}",
           checkVersionError: "Error checking version: {{error}}",
           tauriRequired: "This feature requires Tauri environment",
-          updateFailed: "Failed to update CLIProxyAPI: {{error}}",
-          updateError: "Error updating CLIProxyAPI: {{error}}",
+          updateFailed: "Failed to update NiceCLI runtime: {{error}}",
+          updateError: "Error updating NiceCLI runtime: {{error}}",
           checkingVersion: "Checking version...",
-          downloading: "Downloading CLIProxyAPI...",
+          downloading: "Downloading NiceCLI runtime...",
           downloadCompleted: "Download completed!",
           latestVersion:
-            "CLIProxyAPI {{version}} is already the latest version!",
-          localReady: "Using local CLIProxyAPI {{version}}.",
+            "NiceCLI runtime {{version}} is already the latest version!",
+          localReady: "Using local NiceCLI runtime {{version}}.",
           operationFailed: "Operation failed: {{error}}",
           connectionError: "Connection error: {{error}}",
           reason: "Reason: {{reason}}",
           processExited:
-            "CLIProxyAPI process exited abnormally, exit code: {{code}}",
+            "Local runtime exited abnormally, exit code: {{code}}",
           downloadedSuccess:
-            "CLIProxyAPI {{version}} downloaded and extracted successfully!",
+            "NiceCLI runtime {{version}} downloaded and extracted successfully!",
           updatePrompt:
             "Current version: {{version}}\nLatest version: {{latestVersion}}\n\nDo you want to update to the latest version?",
         },
@@ -180,7 +180,6 @@
             codex: "Codex",
             qwen: "Qwen Code",
             vertex: "Vertex",
-            iflow: "iFlow",
             antigravity: "Antigravity",
             local: "Local File",
           },
@@ -264,7 +263,7 @@
           failedToApply: "Failed to apply {{count}} setting(s)",
           networkError: "Network error",
           portRestartSaved:
-            "Port configuration saved, restarting CLIProxyAPI process...",
+            "Port configuration saved, restarting local runtime...",
           resetToServer: "{{tab}} reset to server config",
           themeUpdated: "Theme updated",
           languageUpdated: "Language updated",
@@ -318,7 +317,7 @@
         appSettings: {
           title: "应用设置",
           description:
-            "调整 NiceCLI 本地界面体验，不会修改 CLIProxyAPI 的服务端配置。",
+            "调整 NiceCLI 本地界面体验，不会修改本地运行时配置。",
           themeLabel: "主题",
           themeDescription: "切换 NiceCLI 的浅色 / 深色外观。",
           languageLabel: "语言",
@@ -331,12 +330,12 @@
         login: {
           pageTitle: "NiceCLI",
           localTitle: "本地",
-          localDescription: "在当前机器上启动内置的 CLIProxyAPI 服务。",
+          localDescription: "在当前机器上启动内置的 NiceCLI 本地运行时。",
           proxyLabel: "代理服务器（可选）：",
           proxyPlaceholder:
             "http://host:port 或 https://host:port 或 socks5://user:pass@host:port",
           proxyHelp: "支持 HTTP、HTTPS 和 SOCKS5 代理",
-          progressDownloading: "正在下载 CLIProxyAPI...",
+          progressDownloading: "正在下载 NiceCLI 运行时...",
           updateDialogTitle: "发现新版本",
           updateDialogMessage: "检测到新版本，是否现在更新到最新版？",
           updateLater: "稍后更新",
@@ -344,23 +343,23 @@
           startingLocal: "正在启动本地模式...",
           invalidProxyFormat:
             "代理格式无效。支持格式：http://host:port、https://host:port、socks5://host:port、http://user:pass@host:port、https://user:pass@host:port、socks5://user:pass@host:port",
-          processStartFailed: "CLIProxyAPI 进程启动失败",
-          processStartError: "CLIProxyAPI 进程启动出错",
+          processStartFailed: "本地运行时启动失败",
+          processStartError: "本地运行时启动出错",
           checkVersionFailed: "检查版本失败：{{error}}",
           checkVersionError: "检查版本出错：{{error}}",
           tauriRequired: "此功能需要在 Tauri 环境下运行",
-          updateFailed: "更新 CLIProxyAPI 失败：{{error}}",
-          updateError: "更新 CLIProxyAPI 出错：{{error}}",
+          updateFailed: "更新 NiceCLI 运行时失败：{{error}}",
+          updateError: "更新 NiceCLI 运行时出错：{{error}}",
           checkingVersion: "正在检查版本...",
-          downloading: "正在下载 CLIProxyAPI...",
+          downloading: "正在下载 NiceCLI 运行时...",
           downloadCompleted: "下载完成！",
-          latestVersion: "CLIProxyAPI {{version}} 已是最新版本！",
-          localReady: "正在使用本地 CLIProxyAPI {{version}}。",
+          latestVersion: "NiceCLI 运行时 {{version}} 已是最新版本！",
+          localReady: "正在使用本地 NiceCLI 运行时 {{version}}。",
           operationFailed: "操作失败：{{error}}",
           connectionError: "连接错误：{{error}}",
           reason: "原因：{{reason}}",
-          processExited: "CLIProxyAPI 异常退出，退出码：{{code}}",
-          downloadedSuccess: "CLIProxyAPI {{version}} 已成功下载并解压！",
+          processExited: "本地运行时异常退出，退出码：{{code}}",
+          downloadedSuccess: "NiceCLI 运行时 {{version}} 已成功下载并解压！",
           updatePrompt:
             "当前版本：{{version}}\n最新版本：{{latestVersion}}\n\n是否现在更新到最新版？",
         },
@@ -440,7 +439,6 @@
             codex: "Codex",
             qwen: "Qwen Code",
             vertex: "Vertex",
-            iflow: "iFlow",
             antigravity: "Antigravity",
             local: "本地文件",
           },
@@ -520,7 +518,7 @@
           appliedSettings: "已成功应用 {{count}} 项{{tab}}设置",
           failedToApply: "有 {{count}} 项设置应用失败",
           networkError: "网络错误",
-          portRestartSaved: "端口配置已保存，正在重启 CLIProxyAPI...",
+          portRestartSaved: "端口配置已保存，正在重启本地运行时...",
           resetToServer: "{{tab}}已重置为服务端配置",
           themeUpdated: "主题已更新",
           languageUpdated: "语言已更新",
@@ -725,10 +723,6 @@
       {
         selector: '.dropdown-item[data-type="vertex"]',
         key: "authFiles.newTypes.vertex",
-      },
-      {
-        selector: '.dropdown-item[data-type="iflow"]',
-        key: "authFiles.newTypes.iflow",
       },
       {
         selector: '.dropdown-item[data-type="antigravity"]',

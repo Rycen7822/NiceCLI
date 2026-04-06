@@ -1,0 +1,24 @@
+{
+  "provider": "codex",
+  "snapshots": [
+    {
+      "provider": "codex",
+      "auth_id": "auth-a",
+      "auth_label": "Primary",
+      "account_email": "demo@example.com",
+      "workspace_id": "current",
+      "workspace_name": "demo@example.com",
+      "workspace_type": "personal",
+      "source": "usage_dashboard",
+      "stale": false,
+      "snapshot": {
+        "plan_type": "team",
+        "primary": {
+          "used_percent": 25,
+          "window_minutes": 300,
+          "resets_at": 1760000000
+        }
+      }
+    }
+  ]
+}

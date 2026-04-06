@@ -1,0 +1,9 @@
+{
+  "type": "codex",
+  "email": "demo@example.com",
+  "note": "Workspace A",
+  "priority": 7,
+  "disabled": true,
+  "status": "disabled",
+  "status_message": "disabled via management API"
+}

@@ -10,6 +10,7 @@ Thumbs.db
 /apps/nicecli/dist-web/
 /apps/nicecli/src-tauri/target/
 /apps/nicecli/src-tauri/bundled/
+/target/
 
 # Optional local backend state
 /apps/cliproxyapi/.env

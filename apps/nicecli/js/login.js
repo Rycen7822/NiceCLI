@@ -55,10 +55,10 @@ function initializeLocalState() {
   }
 }
 
-async function startLocalCliProxyAndOpenSettings() {
+async function startLocalRuntimeAndOpenSettings() {
   try {
     const proxyUrl = proxyInput.value.trim();
-    const startRes = await window.__TAURI__.core.invoke("start_cliproxyapi", {
+    const startRes = await window.__TAURI__.core.invoke("start_local_runtime", {
       proxyUrl: proxyUrl || null,
     });
     if (!startRes || !startRes.success) {
@@ -81,7 +81,7 @@ async function startLocalCliProxyAndOpenSettings() {
 if (window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen("process-start-error", (event) => {
     const errorData = event?.payload || {};
-    console.error("CLIProxyAPI process start failed:", errorData);
+    console.error("Local runtime start failed:", errorData);
     showError(
       nicecliT("login.connectionError", {
         error: errorData.error,
@@ -97,7 +97,7 @@ if (window.__TAURI__?.event?.listen) {
   });
   window.__TAURI__.event.listen("process-exit-error", (event) => {
     const errorData = event?.payload || {};
-    console.error("CLIProxyAPI process exited abnormally:", errorData);
+    console.error("Local runtime exited abnormally:", errorData);
     showError(nicecliT("login.processExited", { code: errorData.code }));
   });
 }
@@ -128,7 +128,7 @@ async function handleConnectClick() {
 
     if (window.__TAURI__?.core?.invoke) {
       setLocalConnectionDefaults();
-      await startLocalCliProxyAndOpenSettings();
+      await startLocalRuntimeAndOpenSettings();
     } else {
       showError(nicecliT("login.tauriRequired"));
     }

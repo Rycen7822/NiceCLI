@@ -1,12 +1,19 @@
 {
   "name": "nicecli",
-  "version": "0.3.6",
-  "description": "NiceCLI desktop shell with embedded CLIProxyAPI runtime",
+  "version": "0.3.7",
+  "description": "NiceCLI desktop shell with local Rust backend runtime",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build --no-bundle",
     "tauri": "tauri",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:host",
+    "verify:js": "node ./scripts/verify-js-guardrails.mjs",
+    "lint:host": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "test:host": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "smoke:backend-host": "cargo run --manifest-path src-tauri/Cargo.toml -- --smoke-backend-host",
+    "smoke:tray-host": "cargo run --manifest-path src-tauri/Cargo.toml -- --smoke-tray-host",
+    "verify:host": "npm run test:host && npm run smoke:backend-host",
+    "verify:host:tray": "npm run verify:host && npm run smoke:tray-host"
   },
   "author": "NiceCLI Contributors",
   "license": "MIT",

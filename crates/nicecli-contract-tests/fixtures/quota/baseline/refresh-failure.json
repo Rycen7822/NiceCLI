@@ -1,0 +1,17 @@
+{
+  "provider": "codex",
+  "snapshots": [
+    {
+      "provider": "codex",
+      "auth_id": "auth-a",
+      "auth_label": "Primary",
+      "account_email": "demo@example.com",
+      "workspace_id": "current",
+      "workspace_name": "demo@example.com",
+      "workspace_type": "personal",
+      "source": "usage_dashboard",
+      "stale": true,
+      "error": "codex quota returned 500: {\"message\":\"server down\"}"
+    }
+  ]
+}

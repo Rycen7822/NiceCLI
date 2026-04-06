@@ -1,0 +1,19 @@
+{
+  "response": {
+    "status": "ok",
+    "file": "gemini-web-gemini-web@example.com.json",
+    "email": "gemini-web@example.com"
+  },
+  "auth_file": {
+    "file_name": "gemini-web-gemini-web@example.com.json",
+    "id_matches_file_name": true,
+    "provider": "gemini",
+    "type": "gemini",
+    "auth_mode": "web_cookies",
+    "email": "gemini-web@example.com",
+    "label": "gemini-web@example.com",
+    "cookie": "Secure-1PSID=secure-psid-123; Secure-1PSIDTS=secure-psidts-456;",
+    "secure_1psid": "secure-psid-123",
+    "secure_1psidts": "secure-psidts-456"
+  }
+}

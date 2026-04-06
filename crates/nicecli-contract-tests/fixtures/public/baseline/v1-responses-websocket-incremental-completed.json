@@ -1,0 +1,28 @@
+{
+  "type": "response.completed",
+  "response": {
+    "id": "resp_ws_incremental_second",
+    "object": "response",
+    "created_at": 1730000300,
+    "model": "gpt-test",
+    "status": "completed",
+    "output": [
+      {
+        "id": "msg_next",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "again"
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 2,
+      "output_tokens": 2,
+      "total_tokens": 4
+    }
+  }
+}

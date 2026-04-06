@@ -1,0 +1,11 @@
+{
+  "type": "response.created",
+  "response": {
+    "id": "resp_ws_append",
+    "object": "response",
+    "created_at": 1730000280,
+    "model": "gpt-test",
+    "status": "in_progress",
+    "output": []
+  }
+}

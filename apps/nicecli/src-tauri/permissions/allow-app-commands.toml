@@ -1,11 +1,11 @@
 "$schema" = "../gen/schemas/permission.json"
 identifier = "allow-app-commands"
-description = "Allow invoking application commands from the frontend"
+description = "Allow invoking frontend application commands, including local runtime lifecycle commands"
 allow = [
   "read_config_yaml",
   "update_config_yaml",
-  "restart_cliproxyapi",
-  "start_cliproxyapi",
+  "restart_local_runtime",
+  "start_local_runtime",
   "open_settings_window",
   "open_login_window",
   "start_callback_server",

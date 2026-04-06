@@ -1,0 +1,27 @@
+{
+  "codex-api-key": [
+    {
+      "api-key": " codex-1 ",
+      "prefix": "team",
+      "base-url": "https://codex.local",
+      "websockets": true,
+      "proxy-url": "",
+      "models": [
+        {
+          "name": " gpt-5 ",
+          "alias": " demo-gpt5 "
+        },
+        {
+          "name": "",
+          "alias": ""
+        }
+      ],
+      "headers": {
+        "X-Test": "demo"
+      },
+      "excluded-models": [
+        "gpt-5"
+      ]
+    }
+  ]
+}

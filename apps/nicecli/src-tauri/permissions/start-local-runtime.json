@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/permission.json",
+  "identifier": "start-local-runtime",
+  "description": "Allow invoking the start_local_runtime local runtime command",
+  "allow": ["start_local_runtime"]
+}
+

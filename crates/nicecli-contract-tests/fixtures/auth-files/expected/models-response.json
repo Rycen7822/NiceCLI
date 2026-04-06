@@ -1,0 +1,10 @@
+{
+  "models": [
+    {
+      "id": "gpt-5",
+      "display_name": "GPT-5",
+      "type": "chat",
+      "owned_by": "openai"
+    }
+  ]
+}

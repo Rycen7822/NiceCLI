@@ -186,18 +186,6 @@ class ConfigManager {
   }
 
   /**
-   * Save iFlow cookie directly
-   * @param {string} cookie - Raw iFlow cookie string
-   * @returns {Promise<Object>} Save result
-   */
-  async saveIFlowCookie(cookie) {
-    if (!cookie || !cookie.trim()) {
-      return { success: false, error: "Cookie is required" };
-    }
-    return this.saveLocalIFlowCookie(cookie.trim());
-  }
-
-  /**
    * Import Vertex credential using service account JSON
    * @param {File} file - Service account JSON file
    * @param {string} location - Vertex location, defaults to us-central1
@@ -353,7 +341,7 @@ class ConfigManager {
 
     if (!password) {
       throw new Error(
-        "Missing local management key. Please restart CLIProxyAPI.",
+        "Missing local management key. Please restart the local runtime.",
       );
     }
 
@@ -574,12 +562,12 @@ class ConfigManager {
       const port = config.port || 8317;
       const baseUrl = `http://127.0.0.1:${port}`;
 
-      // In local mode, use the random password from localStorage (set during CLIProxyAPI startup)
+      // In local mode, use the random password from localStorage (set during local runtime startup)
       const password = localStorage.getItem("local-management-key") || "";
 
       if (!password) {
         throw new Error(
-          "Missing local management key. Please restart CLIProxyAPI.",
+          "Missing local management key. Please restart the local runtime.",
         );
       }
 
@@ -625,56 +613,6 @@ class ConfigManager {
   }
 
   /**
-   * Save iFlow cookie in Local mode
-   * @param {string} cookie - Raw cookie string
-   * @returns {Promise<Object>} Save result
-   */
-  async saveLocalIFlowCookie(cookie) {
-    try {
-      const config = await this.getLocalConfig();
-      const port = config.port || 8317;
-      const baseUrl = `http://127.0.0.1:${port}`;
-      const password = localStorage.getItem("local-management-key") || "";
-
-      if (!password) {
-        throw new Error(
-          "Missing local management key. Please restart CLIProxyAPI.",
-        );
-      }
-
-      const apiUrl = baseUrl.endsWith("/")
-        ? `${baseUrl}v0/management/iflow-auth-url`
-        : `${baseUrl}/v0/management/iflow-auth-url`;
-
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "X-Management-Key": password,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ cookie }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (response.ok) {
-        return { success: true, data };
-      }
-
-      return {
-        success: false,
-        error: data.error || `HTTP ${response.status}: ${response.statusText}`,
-      };
-    } catch (error) {
-      console.error("Error saving local iFlow cookie:", error);
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  }
-
-  /**
    * Import Vertex credential in Local mode
    * @param {File} file - Service account JSON file
    * @param {string} location - Vertex location
@@ -689,7 +627,7 @@ class ConfigManager {
 
       if (!password) {
         throw new Error(
-          "Missing local management key. Please restart CLIProxyAPI.",
+          "Missing local management key. Please restart the local runtime.",
         );
       }
 

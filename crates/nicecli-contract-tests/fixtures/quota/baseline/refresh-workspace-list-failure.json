@@ -1,0 +1,18 @@
+{
+  "provider": "codex",
+  "snapshots": [
+    {
+      "provider": "codex",
+      "auth_id": "auth-a",
+      "auth_label": "Primary",
+      "auth_note": "Workspace Alpha",
+      "account_email": "demo@example.com",
+      "workspace_id": "org_default",
+      "workspace_name": "Workspace Alpha",
+      "workspace_type": "business",
+      "source": "usage_dashboard",
+      "stale": true,
+      "error": "codex quota returned 503: workspace list down"
+    }
+  ]
+}

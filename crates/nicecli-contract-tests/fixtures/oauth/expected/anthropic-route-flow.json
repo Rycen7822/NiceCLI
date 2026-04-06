@@ -1,0 +1,45 @@
+{
+  "start": {
+    "status": "ok",
+    "state_present": true,
+    "url": {
+      "scheme": "https",
+      "host": "claude.local",
+      "path": "/oauth/authorize",
+      "stable_query": {
+        "code": "true",
+        "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+        "response_type": "code",
+        "redirect_uri": "http://localhost:54545/callback",
+        "scope": "org:create_api_key user:profile user:inference",
+        "code_challenge_method": "S256"
+      },
+      "dynamic_query_keys": [
+        "code_challenge",
+        "state"
+      ]
+    }
+  },
+  "callback": {
+    "status": 200,
+    "success_text": true
+  },
+  "auth_file_name": "claude-claude-route@example.com.json",
+  "auth_file": {
+    "file_name": "claude-claude-route@example.com.json",
+    "id_matches_file_name": true,
+    "provider": "claude",
+    "type": "claude",
+    "email": "claude-route@example.com",
+    "access_token": "claude-route-access-token",
+    "refresh_token": "claude-route-refresh-token",
+    "account_uuid": "acct-route-456",
+    "organization_uuid": "org-route-123",
+    "organization_name": "Claude Route Org",
+    "last_refresh_present": true,
+    "expired_present": true
+  },
+  "status_after_callback": {
+    "status": "ok"
+  }
+}

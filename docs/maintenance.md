@@ -55,20 +55,23 @@ cargo test -p nicecli-runtime
 cargo test -p nicecli-quota
 cargo test -p nicecli-backend
 cargo test -p nicecli-contract-tests
-cargo test --manifest-path .\apps\nicecli\src-tauri\Cargo.toml
-cargo clippy --manifest-path .\apps\nicecli\src-tauri\Cargo.toml --all-targets -- -D warnings
-cargo run --manifest-path .\apps\nicecli\src-tauri\Cargo.toml -- --smoke-backend-host
+npm --prefix .\apps\nicecli run lint:host
+npm --prefix .\apps\nicecli run test:host
+npm --prefix .\apps\nicecli run smoke:backend-host
 ```
 
 Maintained host-side shortcuts from `apps/nicecli`:
 
 ```powershell
+npm run prepare:web
 npm run verify:js
 npm run lint:host
 npm run test
 npm run verify:host
 npm run verify:host:tray
 ```
+
+`npm run prepare:web` is the host asset preparation entrypoint. The maintained host verification scripts call it automatically so host lint, tests, and smoke checks stay valid in a clean checkout without a pre-existing `apps/nicecli/dist-web/`.
 
 `npm run verify:js` is the frontend guardrail entrypoint. It does not rewrite page code; it only checks browser-side JS syntax, validates hard-coded management/public route references against `crates/nicecli-backend/src/contract.rs`, and verifies `window.__TAURI__.core.invoke(...)` calls against the registered Tauri command list.
 

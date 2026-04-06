@@ -40,7 +40,8 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Lint Tauri host crate
-        run: cargo clippy --manifest-path apps/nicecli/src-tauri/Cargo.toml --all-targets -- -D warnings
+        working-directory: apps/nicecli
+        run: npm run lint:host
 
       - name: Run repository build entrypoint
         run: ./build-windows.ps1 -SkipNpmInstall
@@ -58,10 +59,12 @@ jobs:
         run: cargo test -p nicecli-contract-tests
 
       - name: Test Tauri host crate
-        run: cargo test --manifest-path apps/nicecli/src-tauri/Cargo.toml
+        working-directory: apps/nicecli
+        run: npm run test:host
 
       - name: Smoke local runtime host
-        run: cargo run --manifest-path apps/nicecli/src-tauri/Cargo.toml -- --smoke-backend-host
+        working-directory: apps/nicecli
+        run: npm run smoke:backend-host
 
       - name: Smoke tray host
         working-directory: apps/nicecli

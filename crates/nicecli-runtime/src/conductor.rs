@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,14 +117,15 @@ pub enum RuntimeConductorError {
 #[derive(Debug)]
 pub struct RuntimeConductor {
     store: FileAuthStore,
-    scheduler: AuthScheduler,
+    scheduler: Arc<Mutex<AuthScheduler>>,
 }
 
 impl RuntimeConductor {
     pub fn new(auth_dir: impl Into<PathBuf>, strategy: RoutingStrategy) -> Self {
+        let auth_dir = auth_dir.into();
         Self {
-            store: FileAuthStore::new(auth_dir),
-            scheduler: AuthScheduler::new(strategy),
+            store: FileAuthStore::new(auth_dir.clone()),
+            scheduler: shared_scheduler_for_auth_dir(&auth_dir, strategy),
         }
     }
 
@@ -134,15 +136,18 @@ impl RuntimeConductor {
         options: &PickExecutionOptions,
     ) -> Result<ExecutionSelection, RuntimeConductorError> {
         let (candidates, snapshots_by_id) = self.load_candidates()?;
-        let pick = self.scheduler.pick_single(
-            provider,
-            model,
-            &candidates,
-            options.pinned_auth_id.as_deref(),
-            &options.tried_auth_ids,
-            options.prefer_websocket,
-            options.now,
-        )?;
+        let pick = {
+            let mut scheduler = self.lock_scheduler();
+            scheduler.pick_single(
+                provider,
+                model,
+                &candidates,
+                options.pinned_auth_id.as_deref(),
+                &options.tried_auth_ids,
+                options.prefer_websocket,
+                options.now,
+            )?
+        };
         build_selection(pick, snapshots_by_id)
     }
 
@@ -153,14 +158,17 @@ impl RuntimeConductor {
         options: &PickExecutionOptions,
     ) -> Result<ExecutionSelection, RuntimeConductorError> {
         let (candidates, snapshots_by_id) = self.load_candidates()?;
-        let pick = self.scheduler.pick_mixed(
-            providers,
-            model,
-            &candidates,
-            options.pinned_auth_id.as_deref(),
-            &options.tried_auth_ids,
-            options.now,
-        )?;
+        let pick = {
+            let mut scheduler = self.lock_scheduler();
+            scheduler.pick_mixed(
+                providers,
+                model,
+                &candidates,
+                options.pinned_auth_id.as_deref(),
+                &options.tried_auth_ids,
+                options.now,
+            )?
+        };
         build_selection(pick, snapshots_by_id)
     }
 
@@ -220,6 +228,12 @@ impl RuntimeConductor {
             snapshots_by_id.insert(snapshot.id.clone(), snapshot);
         }
         Ok((candidates, snapshots_by_id))
+    }
+
+    fn lock_scheduler(&self) -> MutexGuard<'_, AuthScheduler> {
+        self.scheduler
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     async fn execute_with_retry<T, E, F, Fut, P>(
@@ -332,6 +346,32 @@ fn build_selection(
         priority: pick.priority,
         snapshot,
     })
+}
+
+fn shared_scheduler_for_auth_dir(
+    auth_dir: &std::path::Path,
+    strategy: RoutingStrategy,
+) -> Arc<Mutex<AuthScheduler>> {
+    let scheduler = {
+        let mut registry = scheduler_registry()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        registry
+            .entry(auth_dir.to_path_buf())
+            .or_insert_with(|| Arc::new(Mutex::new(AuthScheduler::new(strategy))))
+            .clone()
+    };
+
+    scheduler
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .set_strategy(strategy);
+    scheduler
+}
+
+fn scheduler_registry() -> &'static Mutex<HashMap<PathBuf, Arc<Mutex<AuthScheduler>>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<AuthScheduler>>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 #[cfg(test)]

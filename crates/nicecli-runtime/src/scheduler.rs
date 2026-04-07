@@ -64,7 +64,11 @@ impl AuthScheduler {
     }
 
     pub fn set_strategy(&mut self, strategy: RoutingStrategy) {
+        if self.strategy == strategy {
+            return;
+        }
         self.strategy = strategy;
+        self.cursors.clear();
         self.mixed_cursors.clear();
     }
 

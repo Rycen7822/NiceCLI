@@ -13,6 +13,11 @@ mod websocket;
 
 use self::websocket::*;
 
+const PUBLIC_CODEX_RESPONSES_PATH: &str = "/responses";
+const PUBLIC_CODEX_RESPONSES_COMPACT_PATH: &str = "/responses/compact";
+const DEFAULT_PUBLIC_CODEX_USER_AGENT: &str =
+    "codex_cli_rs/0.116.0 (Windows NT 10.0; Win64; x64) NiceCLI";
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(super) struct CodexQuotaSnapshotQuery {
@@ -92,6 +97,14 @@ pub(super) async fn execute_public_codex_request(
         return response;
     }
 
+    let config_json = match load_current_config_json(&state) {
+        Ok(config) => config,
+        Err(error) => return config_error_response(error),
+    };
+    let snapshots = match FileAuthStore::new(&state.auth_dir).list_snapshots() {
+        Ok(snapshots) => snapshots,
+        Err(error) => return auth_snapshot_store_error_response(error),
+    };
     let config = match load_current_config(&state) {
         Ok(config) => config,
         Err(error) => return config_error_response(error),
@@ -114,11 +127,6 @@ pub(super) async fn execute_public_codex_request(
         return openai_error_response(StatusCode::BAD_REQUEST, message);
     }
 
-    let upstream_body = if compact {
-        strip_json_object_field(&raw_body, parsed_json.as_ref(), "stream")
-    } else {
-        raw_body.clone()
-    };
     let model = parsed_json
         .as_ref()
         .and_then(|value| value.get("model"))
@@ -129,62 +137,176 @@ pub(super) async fn execute_public_codex_request(
     let strategy = RoutingStrategy::from_config_value(config.routing.strategy.as_deref());
     let default_proxy_url = trim_optional_string(config.proxy_url.as_deref());
     let user_agent = extract_trimmed_header_value(&headers, "User-Agent").unwrap_or_default();
-    let options = nicecli_runtime::ExecuteWithRetryOptions::new(chrono::Utc::now());
+    let mut runtime_models =
+        requested_public_codex_runtime_models(&config_json, &snapshots, model.as_str());
+    if runtime_models.is_empty()
+        && !model.trim().is_empty()
+        && !model.contains('/')
+        && snapshots
+            .iter()
+            .any(|snapshot| snapshot.provider.eq_ignore_ascii_case("codex"))
+    {
+        runtime_models.push(model.clone());
+    }
+    let api_key_targets = requested_public_codex_api_key_targets(&config_json, model.as_str());
+    let prefer_api_key_targets = model.contains('/');
+    let mut last_error = None;
 
     if stream_requested {
-        let mut caller = CodexResponsesCaller::new(&state.auth_dir, strategy)
-            .with_default_proxy_url(default_proxy_url)
-            .with_user_agent(user_agent);
-        return match caller
-            .execute_stream(
-                CodexResponsesRequest {
-                    model,
-                    body: upstream_body,
-                },
-                options,
+        if prefer_api_key_targets {
+            for target in &api_key_targets {
+                let patched_body = patch_public_codex_request_body(
+                    &raw_body,
+                    parsed_json.as_ref(),
+                    target.upstream_model.as_str(),
+                    compact,
+                );
+                match execute_public_codex_api_key_stream_request(
+                    target,
+                    default_proxy_url.as_deref(),
+                    user_agent.as_str(),
+                    patched_body,
+                )
+                .await
+                {
+                    Ok(response) => return reqwest_stream_response(response),
+                    Err(error) => last_error = Some(public_codex_provider_error_response(error)),
+                }
+            }
+        }
+
+        for runtime_model in &runtime_models {
+            let patched_body = patch_public_codex_request_body(
+                &raw_body,
+                parsed_json.as_ref(),
+                runtime_model.as_str(),
+                compact,
+            );
+            match try_execute_public_codex_runtime_stream_request(
+                state.clone(),
+                strategy,
+                default_proxy_url.clone(),
+                user_agent.as_str(),
+                runtime_model.as_str(),
+                patched_body,
+                ExecuteWithRetryOptions::new(chrono::Utc::now()),
             )
             .await
-            .map(|executed| executed.value)
+            {
+                Ok(Some(response)) => return reqwest_stream_response(response.value),
+                Ok(None) => {}
+                Err(error) => last_error = Some(public_responses_error_response(error)),
+            }
+        }
+
+        if !prefer_api_key_targets {
+            for target in &api_key_targets {
+                let patched_body = patch_public_codex_request_body(
+                    &raw_body,
+                    parsed_json.as_ref(),
+                    target.upstream_model.as_str(),
+                    compact,
+                );
+                match execute_public_codex_api_key_stream_request(
+                    target,
+                    default_proxy_url.as_deref(),
+                    user_agent.as_str(),
+                    patched_body,
+                )
+                .await
+                {
+                    Ok(response) => return reqwest_stream_response(response),
+                    Err(error) => last_error = Some(public_codex_provider_error_response(error)),
+                }
+            }
+        }
+
+        return last_error.unwrap_or_else(|| {
+            openai_error_response(StatusCode::SERVICE_UNAVAILABLE, "No auth available")
+        });
+    }
+
+    if prefer_api_key_targets {
+        for target in &api_key_targets {
+            let patched_body = patch_public_codex_request_body(
+                &raw_body,
+                parsed_json.as_ref(),
+                target.upstream_model.as_str(),
+                compact,
+            );
+            match execute_public_codex_api_key_http_request(
+                target,
+                default_proxy_url.as_deref(),
+                user_agent.as_str(),
+                if compact {
+                    PUBLIC_CODEX_RESPONSES_COMPACT_PATH
+                } else {
+                    PUBLIC_CODEX_RESPONSES_PATH
+                },
+                patched_body,
+            )
+            .await
+            {
+                Ok(response) => return provider_http_response(response),
+                Err(error) => last_error = Some(public_codex_provider_error_response(error)),
+            }
+        }
+    }
+
+    for runtime_model in &runtime_models {
+        let patched_body = patch_public_codex_request_body(
+            &raw_body,
+            parsed_json.as_ref(),
+            runtime_model.as_str(),
+            compact,
+        );
+        match try_execute_public_codex_runtime_request(
+            state.clone(),
+            strategy,
+            default_proxy_url.clone(),
+            user_agent.as_str(),
+            runtime_model.as_str(),
+            patched_body,
+            compact,
+        )
+        .await
         {
-            Ok(response) => reqwest_stream_response(response),
-            Err(error) => public_responses_error_response(error),
-        };
+            Ok(Some(response)) => return provider_http_response(response),
+            Ok(None) => {}
+            Err(error) => last_error = Some(public_responses_error_response(error)),
+        }
     }
 
-    let execution = if compact {
-        let mut caller = CodexCompactCaller::new(&state.auth_dir, strategy)
-            .with_default_proxy_url(default_proxy_url.clone())
-            .with_user_agent(user_agent.clone());
-        caller
-            .execute(
-                CodexCompactRequest {
-                    model,
-                    body: upstream_body,
+    if !prefer_api_key_targets {
+        for target in &api_key_targets {
+            let patched_body = patch_public_codex_request_body(
+                &raw_body,
+                parsed_json.as_ref(),
+                target.upstream_model.as_str(),
+                compact,
+            );
+            match execute_public_codex_api_key_http_request(
+                target,
+                default_proxy_url.as_deref(),
+                user_agent.as_str(),
+                if compact {
+                    PUBLIC_CODEX_RESPONSES_COMPACT_PATH
+                } else {
+                    PUBLIC_CODEX_RESPONSES_PATH
                 },
-                options,
+                patched_body,
             )
             .await
-            .map(|executed| executed.value)
-    } else {
-        let mut caller = CodexResponsesCaller::new(&state.auth_dir, strategy)
-            .with_default_proxy_url(default_proxy_url.clone())
-            .with_user_agent(user_agent.clone());
-        caller
-            .execute(
-                CodexResponsesRequest {
-                    model,
-                    body: upstream_body,
-                },
-                options,
-            )
-            .await
-            .map(|executed| executed.value)
-    };
-
-    match execution {
-        Ok(response) => provider_http_response(response),
-        Err(error) => public_responses_error_response(error),
+            {
+                Ok(response) => return provider_http_response(response),
+                Err(error) => last_error = Some(public_codex_provider_error_response(error)),
+            }
+        }
     }
+
+    last_error.unwrap_or_else(|| {
+        openai_error_response(StatusCode::SERVICE_UNAVAILABLE, "No auth available")
+    })
 }
 
 pub(super) async fn get_public_codex_responses_websocket(
@@ -322,60 +444,475 @@ async fn handle_public_codex_responses_websocket(
             .map(str::trim)
             .unwrap_or_default()
             .to_string();
-        let strategy = RoutingStrategy::from_config_value(config.routing.strategy.as_deref());
-        let default_proxy_url = trim_optional_string(config.proxy_url.as_deref());
-        let mut options = ExecuteWithRetryOptions::new(chrono::Utc::now());
-        options.pick.prefer_websocket = true;
-        if let Some(pinned_auth_id) = pinned_auth_id.as_deref() {
-            options.pick.pinned_auth_id = Some(pinned_auth_id.to_string());
-        }
-
-        let execution = CodexResponsesCaller::new(&state.auth_dir, strategy)
-            .with_default_proxy_url(default_proxy_url)
-            .with_user_agent(user_agent.clone())
-            .execute_stream(
-                CodexResponsesRequest {
-                    model,
-                    body: normalized.request.clone(),
-                },
-                options,
-            )
-            .await;
-
-        match execution {
-            Ok(executed) => {
-                if executed
-                    .selection
-                    .snapshot
-                    .candidate_state
-                    .websocket_enabled
-                {
-                    pinned_auth_id = Some(executed.selection.auth_id);
-                    pinned_incremental_input = true;
-                }
-
-                match forward_responses_websocket_stream(&mut socket, executed.value).await {
-                    Ok(output) => {
-                        last_response_output = output;
-                    }
-                    Err(_) => break,
-                }
-            }
+        let config_json = match load_current_config_json(&state) {
+            Ok(config) => config,
             Err(error) => {
-                let error = responses_websocket_error_from_codex_error(error);
                 if write_responses_websocket_error(
                     &mut socket,
-                    error.status,
-                    error.message.as_str(),
-                    error.headers.as_ref(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    error.to_string().as_str(),
+                    None,
                 )
                 .await
                 .is_err()
                 {
                     break;
                 }
+                continue;
+            }
+        };
+        let snapshots = match FileAuthStore::new(&state.auth_dir).list_snapshots() {
+            Ok(snapshots) => snapshots,
+            Err(error) => {
+                if write_responses_websocket_error(
+                    &mut socket,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    error.to_string().as_str(),
+                    None,
+                )
+                .await
+                .is_err()
+                {
+                    break;
+                }
+                continue;
+            }
+        };
+        let strategy = RoutingStrategy::from_config_value(config.routing.strategy.as_deref());
+        let default_proxy_url = trim_optional_string(config.proxy_url.as_deref());
+        let mut runtime_models =
+            requested_public_codex_runtime_models(&config_json, &snapshots, model.as_str());
+        if runtime_models.is_empty()
+            && !model.trim().is_empty()
+            && !model.contains('/')
+            && snapshots
+                .iter()
+                .any(|snapshot| snapshot.provider.eq_ignore_ascii_case("codex"))
+        {
+            runtime_models.push(model.clone());
+        }
+        let api_key_targets = requested_public_codex_api_key_targets(&config_json, model.as_str());
+        let prefer_api_key_targets = model.contains('/');
+        let mut handled = false;
+
+        if prefer_api_key_targets {
+            for target in &api_key_targets {
+                let patched_request = patch_public_codex_request_body(
+                    &normalized.request,
+                    Some(&parsed_request),
+                    target.upstream_model.as_str(),
+                    false,
+                );
+                match execute_public_codex_api_key_stream_request(
+                    target,
+                    default_proxy_url.as_deref(),
+                    user_agent.as_str(),
+                    patched_request,
+                )
+                .await
+                {
+                    Ok(response) => {
+                        handled = true;
+                        match forward_responses_websocket_stream(&mut socket, response).await {
+                            Ok(output) => {
+                                last_response_output = output;
+                            }
+                            Err(_) => break,
+                        }
+                        break;
+                    }
+                    Err(error) => {
+                        let error = responses_websocket_error_from_codex_provider_error(error);
+                        if write_responses_websocket_error(
+                            &mut socket,
+                            error.status,
+                            error.message.as_str(),
+                            error.headers.as_ref(),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+            if handled {
+                continue;
             }
         }
+
+        for runtime_model in &runtime_models {
+            let patched_request = patch_public_codex_request_body(
+                &normalized.request,
+                Some(&parsed_request),
+                runtime_model.as_str(),
+                false,
+            );
+            let mut options = ExecuteWithRetryOptions::new(chrono::Utc::now());
+            options.pick.prefer_websocket = true;
+            if let Some(pinned_auth_id) = pinned_auth_id.as_deref() {
+                options.pick.pinned_auth_id = Some(pinned_auth_id.to_string());
+            }
+
+            match try_execute_public_codex_runtime_stream_request(
+                state.clone(),
+                strategy,
+                default_proxy_url.clone(),
+                user_agent.as_str(),
+                runtime_model.as_str(),
+                patched_request,
+                options,
+            )
+            .await
+            {
+                Ok(Some(executed)) => {
+                    handled = true;
+                    if executed
+                        .selection
+                        .snapshot
+                        .candidate_state
+                        .websocket_enabled
+                    {
+                        pinned_auth_id = Some(executed.selection.auth_id);
+                        pinned_incremental_input = true;
+                    }
+
+                    match forward_responses_websocket_stream(&mut socket, executed.value).await {
+                        Ok(output) => {
+                            last_response_output = output;
+                        }
+                        Err(_) => break,
+                    }
+                    break;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    let error = responses_websocket_error_from_codex_error(error);
+                    if write_responses_websocket_error(
+                        &mut socket,
+                        error.status,
+                        error.message.as_str(),
+                        error.headers.as_ref(),
+                    )
+                    .await
+                    .is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if handled {
+            continue;
+        }
+
+        if !prefer_api_key_targets {
+            for target in &api_key_targets {
+                let patched_request = patch_public_codex_request_body(
+                    &normalized.request,
+                    Some(&parsed_request),
+                    target.upstream_model.as_str(),
+                    false,
+                );
+                match execute_public_codex_api_key_stream_request(
+                    target,
+                    default_proxy_url.as_deref(),
+                    user_agent.as_str(),
+                    patched_request,
+                )
+                .await
+                {
+                    Ok(response) => {
+                        handled = true;
+                        match forward_responses_websocket_stream(&mut socket, response).await {
+                            Ok(output) => {
+                                last_response_output = output;
+                            }
+                            Err(_) => break,
+                        }
+                        break;
+                    }
+                    Err(error) => {
+                        let error = responses_websocket_error_from_codex_provider_error(error);
+                        if write_responses_websocket_error(
+                            &mut socket,
+                            error.status,
+                            error.message.as_str(),
+                            error.headers.as_ref(),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if !handled
+            && write_responses_websocket_error(
+                &mut socket,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "No auth available",
+                None,
+            )
+            .await
+            .is_err()
+        {
+            break;
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CodexApiKeyExecutionTarget {
+    entry: CodexApiKeyEntry,
+    upstream_model: String,
+}
+
+fn patch_public_codex_request_body(
+    raw_body: &[u8],
+    parsed_json: Option<&JsonValue>,
+    model: &str,
+    compact: bool,
+) -> Vec<u8> {
+    let Some(JsonValue::Object(object)) = parsed_json else {
+        return if compact {
+            strip_json_object_field(raw_body, parsed_json, "stream")
+        } else {
+            raw_body.to_vec()
+        };
+    };
+    let current_model = object
+        .get("model")
+        .and_then(JsonValue::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    if current_model.eq(model.trim()) && (!compact || !object.contains_key("stream")) {
+        return raw_body.to_vec();
+    }
+
+    let mut next = object.clone();
+    next.insert("model".to_string(), json!(model.trim()));
+    if compact {
+        next.remove("stream");
+    }
+    serde_json::to_vec(&JsonValue::Object(next)).unwrap_or_else(|_| {
+        if compact {
+            strip_json_object_field(raw_body, parsed_json, "stream")
+        } else {
+            raw_body.to_vec()
+        }
+    })
+}
+
+fn requested_public_codex_runtime_models(
+    config: &JsonValue,
+    snapshots: &[AuthSnapshot],
+    requested_model: &str,
+) -> Vec<String> {
+    let requested_key = normalize_model_identifier(requested_model);
+    if requested_key.is_empty() {
+        return Vec::new();
+    }
+
+    let force_prefix = config_json_value(config, "force-model-prefix")
+        .and_then(JsonValue::as_bool)
+        .unwrap_or(false);
+    let mut resolved = Vec::new();
+    let mut seen = HashSet::new();
+
+    for snapshot in snapshots {
+        if !snapshot.provider.eq_ignore_ascii_case("codex") {
+            continue;
+        }
+
+        for upstream_model in resolve_requested_public_codex_snapshot_models(
+            config,
+            snapshot,
+            &requested_key,
+            force_prefix,
+        ) {
+            let key = normalize_model_identifier(&upstream_model);
+            if !key.is_empty() && seen.insert(key) {
+                resolved.push(upstream_model);
+            }
+        }
+    }
+
+    resolved
+}
+
+fn resolve_requested_public_codex_snapshot_models(
+    config: &JsonValue,
+    snapshot: &AuthSnapshot,
+    requested_key: &str,
+    force_prefix: bool,
+) -> Vec<String> {
+    let mut base_models = collect_auth_file_model_infos_from_config(
+        config,
+        "codex",
+        snapshot.account_plan.as_deref(),
+    );
+
+    if snapshot.candidate_state.has_explicit_supported_models {
+        base_models.retain(|model| snapshot_allows_model(snapshot, model));
+        append_explicit_snapshot_models(snapshot, "codex", &mut base_models);
+    } else if base_models.is_empty() {
+        append_explicit_snapshot_models(snapshot, "codex", &mut base_models);
+    }
+
+    let mut excluded = oauth_excluded_models_for_provider(config, "codex");
+    if !snapshot.candidate_state.excluded_models.is_empty() {
+        excluded = snapshot
+            .candidate_state
+            .excluded_models
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+    }
+    if !excluded.is_empty() {
+        base_models = apply_excluded_model_patterns(base_models, &excluded);
+    }
+
+    let aliases = oauth_model_alias_entries_for_provider(config, "codex");
+    let prefix = snapshot
+        .prefix
+        .as_deref()
+        .map(normalize_model_prefix)
+        .filter(|value| !value.is_empty());
+
+    let mut resolved = Vec::new();
+    for base_model in base_models {
+        let upstream_model = base_model.id.trim().to_string();
+        if upstream_model.is_empty() {
+            continue;
+        }
+
+        let mut public_models = apply_public_oauth_model_alias(vec![base_model], &aliases);
+        if let Some(prefix) = prefix.as_deref() {
+            public_models = apply_public_model_prefixes(public_models, prefix, force_prefix);
+        }
+
+        if public_models
+            .iter()
+            .any(|model| model_matches_identifier(model, requested_key))
+        {
+            resolved.push(upstream_model);
+        }
+    }
+
+    resolved
+}
+
+fn requested_public_codex_api_key_targets(
+    config: &JsonValue,
+    requested_model: &str,
+) -> Vec<CodexApiKeyExecutionTarget> {
+    let force_prefix = config_json_value(config, "force-model-prefix")
+        .and_then(JsonValue::as_bool)
+        .unwrap_or(false);
+    let mut targets = Vec::new();
+    let mut seen = HashSet::new();
+
+    for entry in codex_api_key_entries_from_config_json(config) {
+        let Some(upstream_model) =
+            resolve_codex_api_key_entry_model(&entry, requested_model, force_prefix)
+        else {
+            continue;
+        };
+        let dedupe_key = format!(
+            "{}\n{}\n{}\n{}",
+            entry.base_url.trim(),
+            entry.proxy_url.trim(),
+            entry.api_key.trim(),
+            normalize_model_identifier(&upstream_model)
+        );
+        if !seen.insert(dedupe_key) {
+            continue;
+        }
+        targets.push(CodexApiKeyExecutionTarget {
+            entry,
+            upstream_model,
+        });
+    }
+
+    targets
+}
+
+fn resolve_codex_api_key_entry_model(
+    entry: &CodexApiKeyEntry,
+    requested_model: &str,
+    force_prefix: bool,
+) -> Option<String> {
+    let requested_key = normalize_model_identifier(requested_model);
+    if requested_key.is_empty() {
+        return None;
+    }
+
+    let prefix = normalize_model_prefix(&entry.prefix);
+    if !entry.models.is_empty() {
+        for model in &entry.models {
+            let upstream_model = model.name.trim();
+            if upstream_model.is_empty() {
+                continue;
+            }
+            let public_model = if model.alias.trim().is_empty() {
+                upstream_model
+            } else {
+                model.alias.trim()
+            };
+            if public_codex_model_variants(public_model, prefix.as_str(), force_prefix)
+                .iter()
+                .any(|candidate| model_matches_identifier(candidate, &requested_key))
+            {
+                return Some(upstream_model.to_string());
+            }
+        }
+        return None;
+    }
+
+    let requested = requested_model.trim();
+    if requested.is_empty() {
+        return None;
+    }
+
+    let mut upstream_candidates = Vec::new();
+    if prefix.is_empty() {
+        upstream_candidates.push(requested.to_string());
+    } else if let Some(stripped) = requested
+        .strip_prefix(format!("{prefix}/").as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        upstream_candidates.push(stripped.to_string());
+    } else if !force_prefix {
+        upstream_candidates.push(requested.to_string());
+    }
+
+    upstream_candidates.into_iter().find(|candidate| {
+        let candidate_key = normalize_model_identifier(candidate);
+        !candidate_key.is_empty()
+            && !entry
+                .excluded_models
+                .iter()
+                .any(|model| model == &candidate_key)
+    })
+}
+
+fn public_codex_model_variants(
+    public_model: &str,
+    prefix: &str,
+    force_prefix: bool,
+) -> Vec<ModelInfo> {
+    let model = build_minimal_public_model_info("codex", public_model);
+    if prefix.is_empty() {
+        vec![model]
+    } else {
+        apply_public_model_prefixes(vec![model], prefix, force_prefix)
     }
 }
 
@@ -645,6 +1182,242 @@ pub(super) async fn get_codex_auth_url(
     }
 }
 
+async fn try_execute_public_codex_runtime_request(
+    state: Arc<BackendAppState>,
+    strategy: RoutingStrategy,
+    default_proxy_url: Option<String>,
+    user_agent: &str,
+    model: &str,
+    body: Vec<u8>,
+    compact: bool,
+) -> Result<Option<ProviderHttpResponse>, ExecuteWithRetryError<CodexCallerError>> {
+    let options = ExecuteWithRetryOptions::new(chrono::Utc::now());
+    if compact {
+        let mut caller = CodexCompactCaller::new(&state.auth_dir, strategy)
+            .with_default_proxy_url(default_proxy_url)
+            .with_user_agent(user_agent.to_string());
+        match caller
+            .execute(
+                CodexCompactRequest {
+                    model: model.to_string(),
+                    body,
+                },
+                options,
+            )
+            .await
+        {
+            Ok(response) => Ok(Some(response.value)),
+            Err(ExecuteWithRetryError::Runtime(RuntimeConductorError::Scheduler(
+                SchedulerError::AuthNotFound | SchedulerError::AuthUnavailable,
+            ))) => Ok(None),
+            Err(error) => Err(error),
+        }
+    } else {
+        let mut caller = CodexResponsesCaller::new(&state.auth_dir, strategy)
+            .with_default_proxy_url(default_proxy_url)
+            .with_user_agent(user_agent.to_string());
+        match caller
+            .execute(
+                CodexResponsesRequest {
+                    model: model.to_string(),
+                    body,
+                },
+                options,
+            )
+            .await
+        {
+            Ok(response) => Ok(Some(response.value)),
+            Err(ExecuteWithRetryError::Runtime(RuntimeConductorError::Scheduler(
+                SchedulerError::AuthNotFound | SchedulerError::AuthUnavailable,
+            ))) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+async fn try_execute_public_codex_runtime_stream_request(
+    state: Arc<BackendAppState>,
+    strategy: RoutingStrategy,
+    default_proxy_url: Option<String>,
+    user_agent: &str,
+    model: &str,
+    body: Vec<u8>,
+    options: ExecuteWithRetryOptions,
+) -> Result<
+    Option<nicecli_runtime::Executed<reqwest::Response>>,
+    ExecuteWithRetryError<CodexCallerError>,
+> {
+    let mut caller = CodexResponsesCaller::new(&state.auth_dir, strategy)
+        .with_default_proxy_url(default_proxy_url)
+        .with_user_agent(user_agent.to_string());
+    match caller
+        .execute_stream(
+            CodexResponsesRequest {
+                model: model.to_string(),
+                body,
+            },
+            options,
+        )
+        .await
+    {
+        Ok(response) => Ok(Some(response)),
+        Err(ExecuteWithRetryError::Runtime(RuntimeConductorError::Scheduler(
+            SchedulerError::AuthNotFound | SchedulerError::AuthUnavailable,
+        ))) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+async fn execute_public_codex_api_key_http_request(
+    target: &CodexApiKeyExecutionTarget,
+    default_proxy_url: Option<&str>,
+    user_agent: &str,
+    endpoint_path: &str,
+    body: Vec<u8>,
+) -> Result<ProviderHttpResponse, CodexCallerError> {
+    let client = build_public_codex_api_key_http_client(
+        trim_optional_string(Some(target.entry.proxy_url.as_str()))
+            .as_deref()
+            .or(default_proxy_url),
+    )?;
+    let response = send_public_codex_api_key_request(
+        &client,
+        target,
+        user_agent,
+        endpoint_path,
+        body,
+        "application/json",
+    )
+    .await?;
+
+    let status = response.status().as_u16();
+    let headers = response.headers().clone();
+    let body = response.bytes().await?.to_vec();
+    if !(200..300).contains(&status) {
+        return Err(CodexCallerError::UnexpectedStatus {
+            status,
+            body: public_codex_error_body_message(&body),
+        });
+    }
+
+    Ok(ProviderHttpResponse {
+        status,
+        headers,
+        body,
+    })
+}
+
+async fn execute_public_codex_api_key_stream_request(
+    target: &CodexApiKeyExecutionTarget,
+    default_proxy_url: Option<&str>,
+    user_agent: &str,
+    body: Vec<u8>,
+) -> Result<reqwest::Response, CodexCallerError> {
+    let client = build_public_codex_api_key_http_client(
+        trim_optional_string(Some(target.entry.proxy_url.as_str()))
+            .as_deref()
+            .or(default_proxy_url),
+    )?;
+    let response = send_public_codex_api_key_request(
+        &client,
+        target,
+        user_agent,
+        PUBLIC_CODEX_RESPONSES_PATH,
+        body,
+        "text/event-stream",
+    )
+    .await?;
+
+    let status = response.status().as_u16();
+    if !(200..300).contains(&status) {
+        let body = response.bytes().await?.to_vec();
+        return Err(CodexCallerError::UnexpectedStatus {
+            status,
+            body: public_codex_error_body_message(&body),
+        });
+    }
+
+    Ok(response)
+}
+
+fn build_public_codex_api_key_http_client(
+    proxy_url: Option<&str>,
+) -> Result<Client, reqwest::Error> {
+    let mut builder = Client::builder();
+    if let Some(proxy_url) = proxy_url.and_then(|value| trim_optional_string(Some(value))) {
+        builder = builder.proxy(Proxy::all(proxy_url)?);
+    }
+    builder.build()
+}
+
+async fn send_public_codex_api_key_request(
+    client: &Client,
+    target: &CodexApiKeyExecutionTarget,
+    user_agent: &str,
+    endpoint_path: &str,
+    body: Vec<u8>,
+    accept: &str,
+) -> Result<reqwest::Response, CodexCallerError> {
+    let url = format!(
+        "{}{}",
+        target.entry.base_url.trim_end_matches('/'),
+        endpoint_path
+    );
+    let mut builder = client
+        .post(url)
+        .header(REQWEST_CONTENT_TYPE, "application/json")
+        .header(REQWEST_ACCEPT, accept)
+        .header(
+            REQWEST_USER_AGENT,
+            if user_agent.trim().is_empty() {
+                DEFAULT_PUBLIC_CODEX_USER_AGENT
+            } else {
+                user_agent.trim()
+            },
+        );
+
+    if let Some(api_key) = trim_optional_string(Some(target.entry.api_key.as_str())) {
+        builder = builder.header(REQWEST_AUTHORIZATION, format!("Bearer {api_key}"));
+    }
+
+    if let Some(headers) = target.entry.headers.as_ref() {
+        for (name, value) in headers {
+            let Ok(header_name) = reqwest::header::HeaderName::from_bytes(name.as_bytes()) else {
+                continue;
+            };
+            let Ok(header_value) = reqwest::header::HeaderValue::from_str(value) else {
+                continue;
+            };
+            builder = builder.header(header_name, header_value);
+        }
+    }
+
+    builder
+        .body(body)
+        .send()
+        .await
+        .map_err(CodexCallerError::Request)
+}
+
+fn public_codex_error_body_message(body: &[u8]) -> String {
+    let trimmed = String::from_utf8_lossy(body).trim().to_string();
+    if trimmed.is_empty() {
+        "request failed".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn public_codex_provider_error_response(error: CodexCallerError) -> Response {
+    public_responses_error_response(ExecuteWithRetryError::Provider(error))
+}
+
+fn responses_websocket_error_from_codex_provider_error(
+    error: CodexCallerError,
+) -> ResponsesWebsocketError {
+    responses_websocket_error_from_codex_error(ExecuteWithRetryError::Provider(error))
+}
+
 fn public_responses_error_response(error: ExecuteWithRetryError<CodexCallerError>) -> Response {
     match error {
         ExecuteWithRetryError::Provider(error) => match error {
@@ -744,11 +1517,8 @@ fn normalize_codex_api_key_entries_for_write(
         .collect()
 }
 
-fn load_codex_api_key_entries(
-    state: &BackendAppState,
-) -> Result<Vec<CodexApiKeyEntry>, ConfigError> {
-    let config = load_current_config_json(state)?;
-    let entries = config_json_value(&config, "codex-api-key")
+fn codex_api_key_entries_from_config_json(config: &JsonValue) -> Vec<CodexApiKeyEntry> {
+    let entries = config_json_value(config, "codex-api-key")
         .and_then(JsonValue::as_array)
         .map(|items| {
             items
@@ -758,7 +1528,14 @@ fn load_codex_api_key_entries(
         })
         .unwrap_or_default();
 
-    Ok(sanitize_loaded_codex_api_key_entries(entries))
+    sanitize_loaded_codex_api_key_entries(entries)
+}
+
+fn load_codex_api_key_entries(
+    state: &BackendAppState,
+) -> Result<Vec<CodexApiKeyEntry>, ConfigError> {
+    let config = load_current_config_json(state)?;
+    Ok(codex_api_key_entries_from_config_json(&config))
 }
 
 fn persist_codex_api_key_entries(

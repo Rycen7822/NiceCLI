@@ -1,4 +1,6 @@
-use crate::{OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL};
+use crate::{
+    should_bypass_proxy_for_url, OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL,
+};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use rand::rngs::OsRng;
@@ -310,9 +312,11 @@ impl AntigravityLoginService {
         }
     }
 
-    fn build_http_client(&self) -> Result<Client, reqwest::Error> {
+    fn build_http_client(&self, request_url: &str) -> Result<Client, reqwest::Error> {
         let mut builder = Client::builder().timeout(Duration::from_secs(30));
-        if let Some(proxy_url) = &self.default_proxy_url {
+        if should_bypass_proxy_for_url(request_url) {
+            builder = builder.no_proxy();
+        } else if let Some(proxy_url) = &self.default_proxy_url {
             builder = builder.proxy(Proxy::all(proxy_url)?);
         }
         builder.build()
@@ -322,7 +326,7 @@ impl AntigravityLoginService {
         &self,
         code: &str,
     ) -> Result<TokenResponse, AntigravityLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.token_url)?;
         let response = client
             .post(&self.endpoints.token_url)
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
@@ -354,7 +358,7 @@ impl AntigravityLoginService {
     }
 
     async fn fetch_user_email(&self, access_token: &str) -> Result<String, AntigravityLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.user_info_url)?;
         let response = client
             .get(&self.endpoints.user_info_url)
             .header(AUTHORIZATION, format!("Bearer {}", access_token.trim()))
@@ -376,7 +380,7 @@ impl AntigravityLoginService {
     }
 
     async fn fetch_project_id(&self, access_token: &str) -> Result<Option<String>, reqwest::Error> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.load_code_assist_url)?;
         let response = client
             .post(&self.endpoints.load_code_assist_url)
             .header(AUTHORIZATION, format!("Bearer {}", access_token.trim()))
@@ -607,5 +611,49 @@ mod tests {
             Some("antigravity-access-token")
         );
         assert!(sessions.get(&started.state).expect("get session").is_none());
+    }
+
+    #[tokio::test]
+    async fn completes_antigravity_login_with_loopback_endpoints_even_when_proxy_is_configured() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let server = spawn_antigravity_server().await;
+        let sessions = Arc::new(OAuthSessionStore::default());
+        let service =
+            AntigravityLoginService::new(sessions.clone(), Some("http://127.0.0.1:9".to_string()))
+                .with_endpoints(AntigravityLoginEndpoints {
+                    authorize_url: format!("http://{server}/oauth2/authorize"),
+                    token_url: format!("http://{server}/oauth2/token"),
+                    user_info_url: format!("http://{server}/userinfo"),
+                    load_code_assist_url: format!("http://{server}/v1internal:loadCodeAssist"),
+                    ..AntigravityLoginEndpoints::default()
+                });
+
+        let started = service.start_login().expect("start login");
+        let service_clone = service.clone();
+        let auth_dir = temp_dir.path().to_path_buf();
+        let state_value = started.state.clone();
+        let completion =
+            tokio::spawn(
+                async move { service_clone.complete_login(&auth_dir, &state_value).await },
+            );
+
+        sleep(Duration::from_millis(50)).await;
+        write_oauth_callback_file_for_pending_session(
+            temp_dir.path(),
+            sessions.as_ref(),
+            "antigravity",
+            &started.state,
+            "auth-code-123",
+            "",
+        )
+        .expect("write callback file");
+
+        let completed = completion
+            .await
+            .expect("join task")
+            .expect("complete login");
+
+        assert_eq!(completed.email, "antigravity@example.com");
+        assert_eq!(completed.project_id.as_deref(), Some("project-123"));
     }
 }

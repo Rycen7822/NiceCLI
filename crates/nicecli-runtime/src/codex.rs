@@ -466,6 +466,91 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn codex_responses_caller_keeps_round_robin_cursor_across_new_callers() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let state = ServerState {
+            requests: requests.clone(),
+        };
+        let app = Router::new()
+            .route(
+                "/responses",
+                post(
+                    |State(state): State<ServerState>, headers: HeaderMap, body: Bytes| async move {
+                        state.requests.lock().expect("lock").push(RecordedRequest {
+                            authorization: headers
+                                .get(AUTHORIZATION)
+                                .and_then(|value| value.to_str().ok())
+                                .map(str::to_string),
+                            body: body.to_vec(),
+                        });
+                        (
+                            StatusCode::OK,
+                            r#"{"id":"resp_responses","status":"completed"}"#,
+                        )
+                            .into_response()
+                    },
+                ),
+            )
+            .with_state(state);
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let base_url = format!("http://{}", listener.local_addr().expect("addr"));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+
+        write_codex_auth(
+            &temp_dir,
+            "codex-a@example.com-team.json",
+            "token-a",
+            &base_url,
+        );
+        write_codex_auth(
+            &temp_dir,
+            "codex-b@example.com-team.json",
+            "token-b",
+            &base_url,
+        );
+
+        let options = ExecuteWithRetryOptions::new(chrono::Utc::now());
+        let mut first_caller =
+            CodexResponsesCaller::new(temp_dir.path(), RoutingStrategy::RoundRobin);
+        let first = first_caller
+            .execute(
+                CodexResponsesRequest {
+                    model: "gpt-5".to_string(),
+                    body: br#"{"model":"gpt-5","input":"hello"}"#.to_vec(),
+                },
+                options.clone(),
+            )
+            .await
+            .expect("first execute");
+
+        let mut second_caller =
+            CodexResponsesCaller::new(temp_dir.path(), RoutingStrategy::RoundRobin);
+        let second = second_caller
+            .execute(
+                CodexResponsesRequest {
+                    model: "gpt-5".to_string(),
+                    body: br#"{"model":"gpt-5","input":"world"}"#.to_vec(),
+                },
+                options,
+            )
+            .await
+            .expect("second execute");
+
+        assert_eq!(first.selection.auth_id, "codex-a@example.com-team.json");
+        assert_eq!(second.selection.auth_id, "codex-b@example.com-team.json");
+
+        let requests = requests.lock().expect("lock");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].authorization.as_deref(), Some("Bearer token-a"));
+        assert_eq!(requests[1].authorization.as_deref(), Some("Bearer token-b"));
+
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn codex_responses_caller_rotates_to_next_auth_after_retryable_status() {
         let temp_dir = TempDir::new().expect("temp dir");
         let requests = Arc::new(Mutex::new(Vec::new()));

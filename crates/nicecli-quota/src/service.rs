@@ -5,6 +5,10 @@ use crate::{
     PROVIDER_CODEX, SOURCE_USAGE_DASHBOARD,
 };
 use chrono::{SecondsFormat, Utc};
+use nicecli_auth::{
+    is_generic_codex_workspace_name, patch_auth_file_fields, CodexAccountProfile,
+    PatchAuthFileFields,
+};
 use nicecli_runtime::{
     ExecutionError, ExecutionResult, FileAuthStore, RecordExecutionResultOptions,
 };
@@ -93,23 +97,33 @@ impl CodexQuotaService {
             .map_err(CodexQuotaError::ReadAuthDir)?;
         self.sync_cache_with_current_auths(&auths, &options.auth_id);
 
-        for auth in auths
-            .iter()
+        let mut effective_auths = auths.clone();
+        for auth in effective_auths
+            .iter_mut()
             .filter(|auth| options.auth_id.is_empty() || auth.auth_id == options.auth_id)
         {
             self.refresh_auth(auth, &options.workspace_id).await;
         }
 
         let mut snapshots = self.cache.list(&options.auth_id, &options.workspace_id);
-        apply_current_auth_metadata(&mut snapshots, &auths);
+        apply_current_auth_metadata(&mut snapshots, &effective_auths);
         Ok(snapshots)
     }
 
-    async fn refresh_auth(&self, auth: &CodexAuthContext, requested_workspace_id: &str) {
+    async fn refresh_auth(&self, auth: &mut CodexAuthContext, requested_workspace_id: &str) {
+        let original_note = auth.auth_note.clone();
+        let account_profile = self.source.fetch_account_profile(auth).await;
+        let note_changed = apply_account_profile(auth, account_profile.as_ref());
+        if note_changed {
+            self.persist_auth_note(auth, &original_note);
+        }
+
         let workspaces = match self.source.list_workspaces(auth).await {
             Ok(workspaces) => workspaces,
             Err(error) => {
-                let workspace = workspace_for_failure(auth, requested_workspace_id, &self.cache);
+                let mut workspace =
+                    workspace_for_failure(auth, requested_workspace_id, &self.cache);
+                apply_account_profile_to_workspace(auth, &mut workspace, account_profile.as_ref());
                 self.mark_refresh_failure(auth, workspace, error);
                 return;
             }
@@ -118,15 +132,14 @@ impl CodexQuotaService {
         let mut targets =
             filter_target_workspaces(auth, &workspaces, requested_workspace_id, &self.cache);
         if targets.is_empty() {
-            targets.push(workspace_for_failure(
-                auth,
-                requested_workspace_id,
-                &self.cache,
-            ));
+            let mut workspace = workspace_for_failure(auth, requested_workspace_id, &self.cache);
+            apply_account_profile_to_workspace(auth, &mut workspace, account_profile.as_ref());
+            targets.push(workspace);
         }
 
-        for workspace in targets {
-            let workspace = normalize_workspace_ref(auth, workspace);
+        for mut workspace in targets {
+            workspace = normalize_workspace_ref(auth, workspace);
+            apply_account_profile_to_workspace(auth, &mut workspace, account_profile.as_ref());
             match self.source.fetch_workspace_snapshot(auth, &workspace).await {
                 Ok(snapshot) => {
                     self.record_refresh_success(auth);
@@ -194,11 +207,13 @@ impl CodexQuotaService {
             });
 
         existing.auth_label = non_empty(&auth.auth_label);
-        existing.auth_note = non_empty(&auth.auth_note);
+        existing.auth_note =
+            pick_preferred_workspace_name(non_empty(&auth.auth_note), existing.auth_note);
         existing.auth_file_name = non_empty(&auth.auth_file_name);
         existing.account_email = pick_first(non_empty(&auth.account_email), existing.account_email);
         existing.account_plan = pick_first(non_empty(&auth.account_plan), existing.account_plan);
-        existing.workspace_name = pick_first(non_empty(&workspace.name), existing.workspace_name);
+        existing.workspace_name =
+            pick_preferred_workspace_name(non_empty(&workspace.name), existing.workspace_name);
         existing.workspace_type = pick_first(non_empty(&workspace.r#type), existing.workspace_type);
         existing.fetched_at = now_rfc3339();
         existing.stale = true;
@@ -253,6 +268,33 @@ impl CodexQuotaService {
             auth_name,
             result,
             RecordExecutionResultOptions::new(Utc::now()),
+        );
+    }
+
+    fn persist_auth_note(&self, auth: &CodexAuthContext, original_note: &str) {
+        if !should_replace_workspace_name(Some(original_note), Some(&auth.auth_note)) {
+            return;
+        }
+
+        let Some(store) = &self.result_store else {
+            return;
+        };
+        let auth_name = if auth.auth_file_name.trim().is_empty() {
+            auth.auth_id.as_str()
+        } else {
+            auth.auth_file_name.as_str()
+        };
+        if !auth_name.to_ascii_lowercase().ends_with(".json") {
+            return;
+        }
+
+        let _ = patch_auth_file_fields(
+            store.auth_dir(),
+            auth_name,
+            &PatchAuthFileFields {
+                note: non_empty(&auth.auth_note),
+                ..PatchAuthFileFields::default()
+            },
         );
     }
 }
@@ -391,7 +433,8 @@ fn apply_current_auth_metadata(
             continue;
         };
         snapshot.auth_label = non_empty(&auth.auth_label);
-        snapshot.auth_note = non_empty(&auth.auth_note);
+        snapshot.auth_note =
+            pick_preferred_workspace_name(non_empty(&auth.auth_note), snapshot.auth_note.clone());
         snapshot.auth_file_name = non_empty(&auth.auth_file_name);
         snapshot.account_email = pick_first(
             non_empty(&auth.account_email),
@@ -424,14 +467,127 @@ fn pick_first(primary: Option<String>, fallback: Option<String>) -> Option<Strin
     primary.or(fallback)
 }
 
+fn apply_account_profile(
+    auth: &mut CodexAuthContext,
+    profile: Option<&CodexAccountProfile>,
+) -> bool {
+    let Some(profile) = profile else {
+        return false;
+    };
+
+    let mut changed = false;
+
+    if auth.account_id.trim().is_empty() {
+        if let Some(account_id) = profile.account_id.as_deref().and_then(non_empty_ref) {
+            auth.account_id = account_id.to_string();
+            changed = true;
+        }
+    }
+
+    if let Some(next_note) = profile.account_name.as_deref().and_then(non_empty_ref) {
+        if !should_replace_workspace_name(Some(auth.auth_note.as_str()), Some(next_note)) {
+            return changed;
+        }
+
+        let next_note = next_note.to_string();
+        if auth.auth_note != next_note {
+            auth.auth_note = next_note;
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+fn apply_account_profile_to_workspace(
+    auth: &CodexAuthContext,
+    workspace: &mut WorkspaceRef,
+    profile: Option<&CodexAccountProfile>,
+) {
+    let Some(profile) = profile else {
+        return;
+    };
+    let Some(account_name) = profile.account_name.as_deref().and_then(non_empty_ref) else {
+        return;
+    };
+    if is_generic_codex_workspace_name(account_name) {
+        return;
+    }
+
+    let workspace_id = non_empty_ref(&workspace.id);
+    let profile_account_id = profile.account_id.as_deref().and_then(non_empty_ref);
+    let auth_account_id = non_empty_ref(&auth.account_id);
+    let matches_workspace = match (workspace_id, profile_account_id, auth_account_id) {
+        (Some(workspace_id), Some(profile_account_id), _) => {
+            workspace_id.eq_ignore_ascii_case(profile_account_id)
+        }
+        (Some(workspace_id), None, Some(auth_account_id)) => {
+            workspace_id.eq_ignore_ascii_case(auth_account_id)
+        }
+        (None, _, _) => true,
+        _ => false,
+    };
+
+    if matches_workspace
+        && (workspace.name.trim().is_empty() || is_generic_codex_workspace_name(&workspace.name))
+    {
+        workspace.name = account_name.to_string();
+    }
+}
+
+fn pick_preferred_workspace_name(
+    primary: Option<String>,
+    fallback: Option<String>,
+) -> Option<String> {
+    if primary
+        .as_deref()
+        .map(|value| !is_generic_codex_workspace_name(value))
+        .unwrap_or(false)
+    {
+        return primary;
+    }
+    if fallback
+        .as_deref()
+        .map(|value| !is_generic_codex_workspace_name(value))
+        .unwrap_or(false)
+    {
+        return fallback;
+    }
+    primary.or(fallback)
+}
+
+fn should_replace_workspace_name(current: Option<&str>, candidate: Option<&str>) -> bool {
+    let Some(candidate) = candidate.and_then(non_empty_ref) else {
+        return false;
+    };
+    if is_generic_codex_workspace_name(candidate) {
+        return false;
+    }
+
+    match current.and_then(non_empty_ref) {
+        None => true,
+        Some(current) => is_generic_codex_workspace_name(current),
+    }
+}
+
+fn non_empty_ref(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::CodexQuotaService;
+    use super::{apply_account_profile, CodexQuotaService};
     use crate::{
         AuthEnumerator, CodexAuthContext, CodexQuotaSource, ListOptions, RateLimitSnapshot,
         WorkspaceRef,
     };
     use async_trait::async_trait;
+    use nicecli_auth::CodexAccountProfile;
     use nicecli_runtime::FileAuthStore;
     use serde_json::Value;
     use std::fs;
@@ -505,6 +661,49 @@ mod tests {
             Err(crate::CodexSourceError::UnexpectedStatus {
                 status: 429,
                 body: "quota exhausted".to_string(),
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct HydratedProfileSource;
+
+    #[async_trait]
+    impl CodexQuotaSource for HydratedProfileSource {
+        async fn fetch_account_profile(
+            &self,
+            _auth: &CodexAuthContext,
+        ) -> Option<CodexAccountProfile> {
+            Some(CodexAccountProfile {
+                account_id: Some("org_default".to_string()),
+                account_name: Some("MyTeam".to_string()),
+                account_structure: Some("workspace".to_string()),
+            })
+        }
+
+        async fn list_workspaces(
+            &self,
+            _auth: &CodexAuthContext,
+        ) -> Result<Vec<WorkspaceRef>, crate::CodexSourceError> {
+            Ok(vec![WorkspaceRef {
+                id: "org_default".to_string(),
+                name: "Personal".to_string(),
+                r#type: "business".to_string(),
+            }])
+        }
+
+        async fn fetch_workspace_snapshot(
+            &self,
+            _auth: &CodexAuthContext,
+            _workspace: &WorkspaceRef,
+        ) -> Result<RateLimitSnapshot, crate::CodexSourceError> {
+            Ok(RateLimitSnapshot {
+                limit_id: Some("codex".to_string()),
+                limit_name: None,
+                primary: None,
+                secondary: None,
+                credits: None,
+                plan_type: Some("team".to_string()),
             })
         }
     }
@@ -631,5 +830,67 @@ mod tests {
         assert!(refreshed_auth.get("status_message").is_none());
         assert!(refreshed_auth.get("quota").is_none());
         assert!(refreshed_auth.get("last_error").is_none());
+    }
+
+    #[tokio::test]
+    async fn refresh_uses_remote_account_name_for_generic_auth_note_and_persists_it() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let auth_file_name = "codex-demo@example.com-team.json";
+        fs::write(
+            temp_dir.path().join(auth_file_name),
+            r#"{
+  "type": "codex",
+  "provider": "codex",
+  "email": "demo@example.com",
+  "note": "Personal",
+  "access_token": "token"
+}"#,
+        )
+        .expect("seed auth file");
+
+        let service = CodexQuotaService::with_deps(
+            Arc::new(FakeAuthEnumerator {
+                auths: vec![CodexAuthContext {
+                    auth_note: "Personal".to_string(),
+                    ..demo_auth_context(auth_file_name)
+                }],
+            }),
+            Arc::new(HydratedProfileSource),
+        )
+        .with_result_store(FileAuthStore::new(temp_dir.path()));
+
+        let snapshots = service
+            .list_snapshots_with_options(ListOptions {
+                refresh: true,
+                ..ListOptions::default()
+            })
+            .await
+            .expect("refresh");
+
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(snapshots[0].auth_note.as_deref(), Some("MyTeam"));
+        assert_eq!(snapshots[0].workspace_name.as_deref(), Some("MyTeam"));
+
+        let auth_json: Value = serde_json::from_slice(
+            &fs::read(temp_dir.path().join(auth_file_name)).expect("read auth"),
+        )
+        .expect("auth json");
+        assert_eq!(auth_json["note"].as_str(), Some("MyTeam"));
+    }
+
+    #[test]
+    fn apply_account_profile_ignores_missing_remote_account_name() {
+        let mut auth = demo_auth_context("codex-demo@example.com-team.json");
+        auth.auth_note = "Personal".to_string();
+        let profile = CodexAccountProfile {
+            account_id: Some("org_default".to_string()),
+            account_name: None,
+            account_structure: Some("workspace".to_string()),
+        };
+
+        let changed = apply_account_profile(&mut auth, Some(&profile));
+
+        assert!(!changed);
+        assert_eq!(auth.auth_note, "Personal");
     }
 }

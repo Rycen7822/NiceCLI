@@ -523,7 +523,13 @@ function formatWorkspaceQuotaAuthSubtitle(snapshot) {
   const email = getWorkspaceQuotaAccountEmail(snapshot);
   const authLabel = normalizeWorkspaceQuotaText(snapshot?.auth_label);
   const authId = normalizeWorkspaceQuotaText(snapshot?.auth_id);
+  const authNote = normalizeWorkspaceQuotaText(snapshot?.auth_note);
+  const source = normalizeWorkspaceQuotaLookupKey(snapshot?.source);
   const title = formatWorkspaceQuotaAuthTitle(snapshot);
+
+  if (source === "codex_api_key" && authNote && authNote !== title) {
+    return authNote;
+  }
 
   if (authLabel && email && authLabel !== email) {
     return authLabel;

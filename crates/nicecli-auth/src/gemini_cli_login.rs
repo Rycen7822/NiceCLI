@@ -1,4 +1,6 @@
-use crate::{OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL};
+use crate::{
+    should_bypass_proxy_for_url, OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL,
+};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use rand::rngs::OsRng;
@@ -377,9 +379,11 @@ impl GeminiCliLoginService {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn build_http_client(&self) -> Result<Client, reqwest::Error> {
+    fn build_http_client(&self, request_url: &str) -> Result<Client, reqwest::Error> {
         let mut builder = Client::builder().timeout(Duration::from_secs(30));
-        if let Some(proxy_url) = &self.default_proxy_url {
+        if should_bypass_proxy_for_url(request_url) {
+            builder = builder.no_proxy();
+        } else if let Some(proxy_url) = &self.default_proxy_url {
             builder = builder.proxy(Proxy::all(proxy_url)?);
         }
         builder.build()
@@ -389,7 +393,7 @@ impl GeminiCliLoginService {
         &self,
         code: &str,
     ) -> Result<TokenResponse, GeminiCliLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.token_url)?;
         let response = client
             .post(&self.endpoints.token_url)
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
@@ -422,7 +426,7 @@ impl GeminiCliLoginService {
     }
 
     async fn fetch_user_email(&self, access_token: &str) -> Result<String, GeminiCliLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.user_info_url)?;
         let response = client
             .get(&self.endpoints.user_info_url)
             .header(AUTHORIZATION, format!("Bearer {}", access_token.trim()))
@@ -447,7 +451,7 @@ impl GeminiCliLoginService {
         &self,
         access_token: &str,
     ) -> Result<String, GeminiCliLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.projects_url)?;
         let response = client
             .get(&self.endpoints.projects_url)
             .header(AUTHORIZATION, format!("Bearer {}", access_token.trim()))
@@ -477,7 +481,6 @@ impl GeminiCliLoginService {
         access_token: &str,
         project_id: &str,
     ) -> Result<bool, GeminiCliLoginError> {
-        let client = self.build_http_client()?;
         let service_url = format!(
             "{}/v1/projects/{}/services/{}",
             self.endpoints.service_usage_url.trim_end_matches('/'),
@@ -485,6 +488,7 @@ impl GeminiCliLoginService {
             GEMINI_REQUIRED_SERVICE
         );
         let enable_url = format!("{service_url}:enable");
+        let client = self.build_http_client(&service_url)?;
 
         let check_response = client
             .get(&service_url)
@@ -778,5 +782,50 @@ mod tests {
             Some(expected_token_uri.as_str())
         );
         assert!(sessions.get(&started.state).expect("get session").is_none());
+    }
+
+    #[tokio::test]
+    async fn completes_gemini_login_with_loopback_endpoints_even_when_proxy_is_configured() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let server = spawn_gemini_server().await;
+        let sessions = Arc::new(OAuthSessionStore::default());
+        let service =
+            GeminiCliLoginService::new(sessions.clone(), Some("http://127.0.0.1:9".to_string()))
+                .with_endpoints(GeminiCliLoginEndpoints {
+                    authorize_url: format!("http://{server}/oauth/authorize"),
+                    token_url: format!("http://{server}/oauth2/token"),
+                    user_info_url: format!("http://{server}/userinfo"),
+                    projects_url: format!("http://{server}/projects"),
+                    service_usage_url: format!("http://{server}"),
+                    ..GeminiCliLoginEndpoints::default()
+                });
+
+        let started = service.start_login(None).expect("start login");
+        let service_clone = service.clone();
+        let auth_dir = temp_dir.path().to_path_buf();
+        let state_value = started.state.clone();
+        let completion =
+            tokio::spawn(
+                async move { service_clone.complete_login(&auth_dir, &state_value).await },
+            );
+
+        sleep(Duration::from_millis(50)).await;
+        write_oauth_callback_file_for_pending_session(
+            temp_dir.path(),
+            sessions.as_ref(),
+            "gemini",
+            &started.state,
+            "auth-code-123",
+            "",
+        )
+        .expect("write callback file");
+
+        let completed = completion
+            .await
+            .expect("join task")
+            .expect("complete login");
+
+        assert_eq!(completed.email, "gemini@example.com");
+        assert_eq!(completed.project_id, "auto-project-123");
     }
 }

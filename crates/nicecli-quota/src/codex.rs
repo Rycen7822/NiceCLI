@@ -6,8 +6,9 @@ use async_trait::async_trait;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use nicecli_auth::{
-    extract_email_from_auth_file_name, extract_plan_from_auth_file_name, read_auth_file,
-    AuthFileStoreError,
+    extract_email_from_auth_file_name, extract_plan_from_auth_file_name,
+    fetch_codex_account_profile, read_auth_file, AuthFileStoreError, CodexAccountProfile,
+    DEFAULT_CODEX_ACCOUNT_CHECK_URL,
 };
 use nicecli_runtime::{AuthStore, AuthStoreError, FileAuthStore};
 use reqwest::{Client, Proxy};
@@ -233,6 +234,10 @@ pub trait CodexQuotaSource: Send + Sync {
         auth: &CodexAuthContext,
         workspace: &WorkspaceRef,
     ) -> Result<RateLimitSnapshot, CodexSourceError>;
+
+    async fn fetch_account_profile(&self, _auth: &CodexAuthContext) -> Option<CodexAccountProfile> {
+        None
+    }
 }
 
 #[derive(Debug, Error)]
@@ -275,6 +280,23 @@ impl HttpCodexQuotaSource {
 
 #[async_trait]
 impl CodexQuotaSource for HttpCodexQuotaSource {
+    async fn fetch_account_profile(&self, auth: &CodexAuthContext) -> Option<CodexAccountProfile> {
+        if auth.auth_id.trim().is_empty() || auth.access_token.trim().is_empty() {
+            return None;
+        }
+
+        let client = self.build_http_client(auth).ok()?;
+        fetch_codex_account_profile(
+            &client,
+            &build_codex_account_check_url(&auth.base_url),
+            &auth.access_token,
+            non_empty_ref(&auth.account_id),
+        )
+        .await
+        .ok()
+        .flatten()
+    }
+
     async fn list_workspaces(
         &self,
         auth: &CodexAuthContext,
@@ -506,6 +528,16 @@ fn build_codex_usage_url(base_url: &str, path_style: CodexQuotaPathStyle) -> Str
     }
 }
 
+fn build_codex_account_check_url(raw_base_url: &str) -> String {
+    let (base_url, path_style) = normalize_codex_quota_base_url(raw_base_url);
+    match path_style {
+        CodexQuotaPathStyle::ChatGptApi => {
+            format!("{}/wham/accounts/check", base_url.trim_end_matches('/'))
+        }
+        CodexQuotaPathStyle::CodexApi => DEFAULT_CODEX_ACCOUNT_CHECK_URL.to_string(),
+    }
+}
+
 fn account_id_for_workspace(auth: &CodexAuthContext, workspace: &WorkspaceRef) -> Option<String> {
     let workspace_id = workspace.id.trim();
     if !workspace_id.is_empty() && workspace_id != DEFAULT_WORKSPACE_ID {
@@ -641,6 +673,15 @@ fn trimmed(value: String) -> Option<String> {
         None
     } else {
         Some(trimmed.to_string())
+    }
+}
+
+fn non_empty_ref(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
     }
 }
 

@@ -7,6 +7,8 @@ const addClaudeKeyBtn = document.getElementById('add-claude-key-btn');
 const apiKeyModal = document.getElementById('api-key-modal');
 const modalTitle = document.getElementById('modal-title');
 const apiKeyForm = document.getElementById('api-key-form');
+const apiKeyLabelInput = document.getElementById('api-key-label-input');
+const apiKeyLabelGroup = document.getElementById('api-key-label-group');
 const apiKeyInput = document.getElementById('api-key-input');
 const baseUrlInput = document.getElementById('base-url-input');
 const baseUrlGroup = document.getElementById('base-url-group');
@@ -140,6 +142,7 @@ function renderCodexKeys() {
     }
     list.innerHTML = '';
     codexKeys.forEach((keyObj, index) => {
+        const label = keyObj.label || keyObj.name || '';
         const baseUrl = keyObj['base-url'] || '';
         const proxyUrl = keyObj['proxy-url'] || '';
         const excluded = Array.isArray(keyObj['excluded-models']) ? keyObj['excluded-models'].join(', ') : '';
@@ -148,6 +151,7 @@ function renderCodexKeys() {
         keyItem.className = 'api-key-item';
         keyItem.innerHTML = `
             <div class="api-key-info">
+                ${label ? `<div class="api-key-label">${label}</div>` : ''}
                 <div class="api-key-value">${keyObj['api-key']}</div>
                 ${baseUrl ? `<div class=\"api-key-base-url\">Base URL: ${baseUrl}</div>` : ''}
                 ${proxyUrl ? `<div class=\"api-key-proxy-url\">Proxy URL: ${proxyUrl}</div>` : ''}
@@ -208,11 +212,13 @@ function showApiKeyModal(type, editIndex = null) {
     currentApiType = type;
     currentEditIndex = editIndex;
     modalTitle.textContent = editIndex !== null ? 'Edit API Key' : 'Add API Key';
+    apiKeyLabelInput.value = '';
     apiKeyInput.value = '';
     baseUrlInput.value = '';
     apiKeyProxyUrlInput.value = '';
     excludedModelsInput.value = '';
     headersInput.value = '';
+    apiKeyLabelInput.classList.remove('error');
     apiKeyInput.classList.remove('error');
     baseUrlInput.classList.remove('error');
     apiKeyProxyUrlInput.classList.remove('error');
@@ -220,16 +226,19 @@ function showApiKeyModal(type, editIndex = null) {
     headersInput.classList.remove('error');
 
     if (type === 'codex') {
+        apiKeyLabelGroup.style.display = 'block';
         baseUrlGroup.style.display = 'block';
         proxyUrlGroup.style.display = 'block';
         excludedModelsGroup.style.display = 'block';
         headersGroup.style.display = 'block';
     } else if (type === 'gemini' || type === 'claude') {
+        apiKeyLabelGroup.style.display = 'none';
         baseUrlGroup.style.display = 'block';
         proxyUrlGroup.style.display = 'block';
         excludedModelsGroup.style.display = 'block';
         headersGroup.style.display = 'block';
     } else {
+        apiKeyLabelGroup.style.display = 'none';
         baseUrlGroup.style.display = 'none';
         proxyUrlGroup.style.display = 'none';
         excludedModelsGroup.style.display = 'none';
@@ -246,6 +255,7 @@ function showApiKeyModal(type, editIndex = null) {
             headersInput.value = keyObj.headers ? JSON.stringify(keyObj.headers, null, 2) : '';
         } else if (type === 'codex') {
             const keyObj = codexKeys[editIndex];
+            apiKeyLabelInput.value = keyObj.label || keyObj.name || '';
             apiKeyInput.value = keyObj['api-key'] || '';
             baseUrlInput.value = keyObj['base-url'] || '';
             apiKeyProxyUrlInput.value = keyObj['proxy-url'] || '';
@@ -272,6 +282,7 @@ function hideApiKeyModal() {
 }
 
 function saveApiKey() {
+    const label = apiKeyLabelInput.value.trim();
     const apiKey = apiKeyInput.value.trim();
     const baseUrl = baseUrlInput.value.trim();
     const proxyUrl = apiKeyProxyUrlInput.value.trim();
@@ -348,6 +359,7 @@ function saveApiKey() {
         renderGeminiKeys();
     } else if (currentApiType === 'codex') {
         const keyObj = { 'api-key': apiKey };
+        if (label) keyObj.label = label;
         if (baseUrl) keyObj['base-url'] = baseUrl;
         if (proxyUrl) keyObj['proxy-url'] = proxyUrl;
         if (headersInput.value.trim()) {
@@ -507,6 +519,9 @@ function normalizeCodexKey(entry) {
         return { 'api-key': entry };
     }
     const obj = { 'api-key': entry['api-key'] || entry.apiKey || '' };
+    if (entry.label || entry.name) {
+        obj.label = entry.label || entry.name;
+    }
     if (entry['base-url'] || entry.baseUrl) {
         obj['base-url'] = entry['base-url'] || entry.baseUrl;
     }

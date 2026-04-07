@@ -1,6 +1,6 @@
 use crate::{
-    fetch_codex_account_profile, is_generic_codex_workspace_name, OAuthFlowError,
-    OAuthSessionStore, DEFAULT_CODEX_ACCOUNT_CHECK_URL, DEFAULT_OAUTH_SESSION_TTL,
+    fetch_codex_account_profile, is_generic_codex_workspace_name, should_bypass_proxy_for_url,
+    OAuthFlowError, OAuthSessionStore, DEFAULT_CODEX_ACCOUNT_CHECK_URL, DEFAULT_OAUTH_SESSION_TTL,
 };
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -291,9 +291,11 @@ impl CodexLoginService {
         pending.remove(state);
     }
 
-    fn build_http_client(&self) -> Result<Client, reqwest::Error> {
+    fn build_http_client(&self, request_url: &str) -> Result<Client, reqwest::Error> {
         let mut builder = Client::builder().timeout(Duration::from_secs(30));
-        if let Some(proxy_url) = &self.default_proxy_url {
+        if should_bypass_proxy_for_url(request_url) {
+            builder = builder.no_proxy();
+        } else if let Some(proxy_url) = &self.default_proxy_url {
             builder = builder.proxy(Proxy::all(proxy_url)?);
         }
         builder.build()
@@ -304,7 +306,7 @@ impl CodexLoginService {
         code: &str,
         pkce: &PkceCodes,
     ) -> Result<TokenResponse, CodexLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.token_url)?;
         let response = client
             .post(&self.endpoints.token_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -343,7 +345,9 @@ impl CodexLoginService {
         access_token: &str,
         account_id: &str,
     ) -> Option<String> {
-        let client = self.build_http_client().ok()?;
+        let client = self
+            .build_http_client(&self.endpoints.account_check_url)
+            .ok()?;
         fetch_codex_account_profile(
             &client,
             &self.endpoints.account_check_url,
@@ -804,5 +808,41 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(&completed.file_path).expect("auth file"))
                 .expect("json");
         assert_eq!(payload["note"].as_str(), Some("MyTeam"));
+    }
+
+    #[tokio::test]
+    async fn completes_codex_login_with_loopback_endpoints_even_when_proxy_is_configured() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let claims = build_jwt(
+            r#"{
+                "email": "demo@example.com",
+                "https://api.openai.com/auth": {
+                    "chatgpt_account_id": "org_default",
+                    "chatgpt_plan_type": "team",
+                    "organizations": [
+                        { "id": "org_default", "title": "Workspace A", "is_default": true }
+                    ]
+                }
+            }"#,
+        );
+        let token_server = spawn_token_server(claims, None).await;
+        let sessions = Arc::new(OAuthSessionStore::default());
+        let service =
+            CodexLoginService::new(sessions.clone(), Some("http://127.0.0.1:9".to_string()))
+                .with_endpoints(CodexLoginEndpoints {
+                    auth_url: format!("http://{token_server}/oauth/authorize"),
+                    token_url: format!("http://{token_server}/oauth/token"),
+                    account_check_url: format!("http://{token_server}/wham/accounts/check"),
+                    ..CodexLoginEndpoints::default()
+                });
+
+        let started = service.start_login().expect("start login");
+        let completed = service
+            .complete_login(temp_dir.path(), &started.state, "auth-code-123", "")
+            .await
+            .expect("complete login");
+
+        assert_eq!(completed.email, "demo@example.com");
+        assert_eq!(completed.note, "Workspace A");
     }
 }

@@ -53,6 +53,7 @@ use std::fs;
 use std::path::{Component, Path};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
+use url::{Host, Url};
 
 #[derive(Debug, Error)]
 pub enum AuthFileStoreError {
@@ -670,6 +671,19 @@ fn trimmed_str(value: &str) -> Option<&str> {
         None
     } else {
         Some(trimmed)
+    }
+}
+
+pub(crate) fn should_bypass_proxy_for_url(request_url: &str) -> bool {
+    let Ok(url) = Url::parse(request_url.trim()) else {
+        return false;
+    };
+
+    match url.host() {
+        Some(Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(Host::Ipv4(host)) => host.is_loopback(),
+        Some(Host::Ipv6(host)) => host.is_loopback(),
+        None => false,
     }
 }
 

@@ -1,4 +1,6 @@
-use crate::{OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL};
+use crate::{
+    should_bypass_proxy_for_url, OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL,
+};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use rand::rngs::OsRng;
@@ -217,9 +219,11 @@ impl QwenLoginService {
         pending.remove(state);
     }
 
-    fn build_http_client(&self) -> Result<Client, reqwest::Error> {
+    fn build_http_client(&self, request_url: &str) -> Result<Client, reqwest::Error> {
         let mut builder = Client::builder().timeout(Duration::from_secs(30));
-        if let Some(proxy_url) = &self.default_proxy_url {
+        if should_bypass_proxy_for_url(request_url) {
+            builder = builder.no_proxy();
+        } else if let Some(proxy_url) = &self.default_proxy_url {
             builder = builder.proxy(Proxy::all(proxy_url)?);
         }
         builder.build()
@@ -229,7 +233,7 @@ impl QwenLoginService {
         &self,
         code_challenge: &str,
     ) -> Result<DeviceFlowResponse, QwenLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.device_code_url)?;
         let response = client
             .post(&self.endpoints.device_code_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -260,7 +264,7 @@ impl QwenLoginService {
         state: &str,
         pending: &PendingQwenLogin,
     ) -> Result<TokenResponse, QwenLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.token_url)?;
         let mut poll_interval = pending.poll_interval;
 
         loop {
@@ -555,5 +559,27 @@ mod tests {
             Some("https://dashscope.aliyuncs.com")
         );
         assert!(sessions.get(&started.state).expect("get session").is_none());
+    }
+
+    #[tokio::test]
+    async fn completes_qwen_login_with_loopback_endpoints_even_when_proxy_is_configured() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let server = spawn_qwen_server().await;
+        let sessions = Arc::new(OAuthSessionStore::default());
+        let service =
+            QwenLoginService::new(sessions.clone(), Some("http://127.0.0.1:9".to_string()))
+                .with_endpoints(QwenLoginEndpoints {
+                    device_code_url: format!("http://{server}/api/v1/oauth2/device/code"),
+                    token_url: format!("http://{server}/api/v1/oauth2/token"),
+                    ..QwenLoginEndpoints::default()
+                });
+
+        let started = service.start_login().await.expect("start login");
+        let completed = service
+            .complete_login(temp_dir.path(), &started.state)
+            .await
+            .expect("complete login");
+
+        assert!(completed.file_name.starts_with("qwen-"));
     }
 }

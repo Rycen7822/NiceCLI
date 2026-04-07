@@ -1,4 +1,6 @@
-use crate::{OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL};
+use crate::{
+    should_bypass_proxy_for_url, OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL,
+};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use rand::rngs::OsRng;
@@ -312,9 +314,11 @@ impl AnthropicLoginService {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn build_http_client(&self) -> Result<Client, reqwest::Error> {
+    fn build_http_client(&self, request_url: &str) -> Result<Client, reqwest::Error> {
         let mut builder = Client::builder().timeout(Duration::from_secs(30));
-        if let Some(proxy_url) = &self.default_proxy_url {
+        if should_bypass_proxy_for_url(request_url) {
+            builder = builder.no_proxy();
+        } else if let Some(proxy_url) = &self.default_proxy_url {
             builder = builder.proxy(Proxy::all(proxy_url)?);
         }
         builder.build()
@@ -326,7 +330,7 @@ impl AnthropicLoginService {
         state: &str,
         pkce: &PkceCodes,
     ) -> Result<TokenResponse, AnthropicLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.token_url)?;
         let (parsed_code, parsed_state) = parse_code_and_state(code);
         let payload = serde_json::json!({
             "code": parsed_code,
@@ -571,5 +575,47 @@ mod tests {
             Some("claude-access-token")
         );
         assert!(sessions.get(&started.state).expect("get session").is_none());
+    }
+
+    #[tokio::test]
+    async fn completes_anthropic_login_with_loopback_token_endpoint_even_when_proxy_is_configured()
+    {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let server = spawn_anthropic_server().await;
+        let sessions = Arc::new(OAuthSessionStore::default());
+        let service =
+            AnthropicLoginService::new(sessions.clone(), Some("http://127.0.0.1:9".to_string()))
+                .with_endpoints(AnthropicLoginEndpoints {
+                    authorize_url: format!("http://{server}/oauth/authorize"),
+                    token_url: format!("http://{server}/v1/oauth/token"),
+                    ..AnthropicLoginEndpoints::default()
+                });
+
+        let started = service.start_login().expect("start login");
+        let service_clone = service.clone();
+        let auth_dir = temp_dir.path().to_path_buf();
+        let state_value = started.state.clone();
+        let completion =
+            tokio::spawn(
+                async move { service_clone.complete_login(&auth_dir, &state_value).await },
+            );
+
+        sleep(Duration::from_millis(50)).await;
+        write_oauth_callback_file_for_pending_session(
+            temp_dir.path(),
+            sessions.as_ref(),
+            "anthropic",
+            &started.state,
+            "auth-code-123",
+            "",
+        )
+        .expect("write callback file");
+
+        let completed = completion
+            .await
+            .expect("join task")
+            .expect("complete login");
+
+        assert_eq!(completed.email, "claude@example.com");
     }
 }

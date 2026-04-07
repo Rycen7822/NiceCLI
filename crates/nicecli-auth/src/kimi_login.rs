@@ -1,4 +1,6 @@
-use crate::{OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL};
+use crate::{
+    should_bypass_proxy_for_url, OAuthFlowError, OAuthSessionStore, DEFAULT_OAUTH_SESSION_TTL,
+};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use rand::rngs::OsRng;
@@ -224,9 +226,11 @@ impl KimiLoginService {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn build_http_client(&self) -> Result<Client, reqwest::Error> {
+    fn build_http_client(&self, request_url: &str) -> Result<Client, reqwest::Error> {
         let mut builder = Client::builder().timeout(Duration::from_secs(30));
-        if let Some(proxy_url) = &self.default_proxy_url {
+        if should_bypass_proxy_for_url(request_url) {
+            builder = builder.no_proxy();
+        } else if let Some(proxy_url) = &self.default_proxy_url {
             builder = builder.proxy(Proxy::all(proxy_url)?);
         }
         builder.build()
@@ -236,7 +240,7 @@ impl KimiLoginService {
         &self,
         device_id: &str,
     ) -> Result<DeviceFlowResponse, KimiLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.device_code_url)?;
         let response = client
             .post(&self.endpoints.device_code_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -267,7 +271,7 @@ impl KimiLoginService {
         state: &str,
         pending: &PendingKimiLogin,
     ) -> Result<TokenResponse, KimiLoginError> {
-        let client = self.build_http_client()?;
+        let client = self.build_http_client(&self.endpoints.token_url)?;
         let mut poll_interval = pending.poll_interval;
 
         loop {
@@ -558,5 +562,27 @@ mod tests {
             .as_str()
             .is_some_and(|value| !value.trim().is_empty()));
         assert!(sessions.get(&started.state).expect("get session").is_none());
+    }
+
+    #[tokio::test]
+    async fn completes_kimi_login_with_loopback_endpoints_even_when_proxy_is_configured() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let server = spawn_kimi_server().await;
+        let sessions = Arc::new(OAuthSessionStore::default());
+        let service =
+            KimiLoginService::new(sessions.clone(), Some("http://127.0.0.1:9".to_string()))
+                .with_endpoints(KimiLoginEndpoints {
+                    device_code_url: format!("http://{server}/api/oauth/device_authorization"),
+                    token_url: format!("http://{server}/api/oauth/token"),
+                    ..KimiLoginEndpoints::default()
+                });
+
+        let started = service.start_login().await.expect("start login");
+        let completed = service
+            .complete_login(temp_dir.path(), &started.state)
+            .await
+            .expect("complete login");
+
+        assert!(completed.file_name.starts_with("kimi-"));
     }
 }

@@ -484,11 +484,12 @@ fn apply_account_profile(
         }
     }
 
-    if should_replace_workspace_name(
-        Some(auth.auth_note.as_str()),
-        profile.account_name.as_deref(),
-    ) {
-        let next_note = profile.account_name.as_deref().unwrap().trim().to_string();
+    if let Some(next_note) = profile.account_name.as_deref().and_then(non_empty_ref) {
+        if !should_replace_workspace_name(Some(auth.auth_note.as_str()), Some(next_note)) {
+            return changed;
+        }
+
+        let next_note = next_note.to_string();
         if auth.auth_note != next_note {
             auth.auth_note = next_note;
             changed = true;
@@ -580,7 +581,7 @@ fn non_empty_ref(value: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::CodexQuotaService;
+    use super::{apply_account_profile, CodexQuotaService};
     use crate::{
         AuthEnumerator, CodexAuthContext, CodexQuotaSource, ListOptions, RateLimitSnapshot,
         WorkspaceRef,
@@ -875,5 +876,21 @@ mod tests {
         )
         .expect("auth json");
         assert_eq!(auth_json["note"].as_str(), Some("MyTeam"));
+    }
+
+    #[test]
+    fn apply_account_profile_ignores_missing_remote_account_name() {
+        let mut auth = demo_auth_context("codex-demo@example.com-team.json");
+        auth.auth_note = "Personal".to_string();
+        let profile = CodexAccountProfile {
+            account_id: Some("org_default".to_string()),
+            account_name: None,
+            account_structure: Some("workspace".to_string()),
+        };
+
+        let changed = apply_account_profile(&mut auth, Some(&profile));
+
+        assert!(!changed);
+        assert_eq!(auth.auth_note, "Personal");
     }
 }

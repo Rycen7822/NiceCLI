@@ -207,3 +207,57 @@ async fn refreshes_codex_quota_snapshots_through_rust_service() {
     );
     assert!(!payload.snapshots[0].fetched_at.is_empty());
 }
+
+#[tokio::test]
+async fn refresh_route_returns_codex_api_key_workspace_entries() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let auth_dir = temp_dir.path().join("auth");
+    fs::create_dir_all(&auth_dir).expect("auth dir");
+    let config_path = temp_dir.path().join("config.yaml");
+    fs::write(
+        &config_path,
+        format!(
+            "host: 127.0.0.1\nport: 8317\nauth-dir: {}\ncodex-api-key:\n  - api-key: third-party-key\n    label: Third Party Team\n    base-url: https://codex.example.com/v1\n",
+            auth_dir.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .expect("config file");
+    let state = load_state_from_bootstrap(
+        BackendBootstrap::new(config_path).with_local_management_password("secret"),
+    )
+    .expect("state should load");
+
+    let response = build_router(state)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v0/management/codex/quota-snapshots/refresh")
+                .header("X-Management-Key", "secret")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    r#"{"auth_id":"codex-api-key:1","workspace_id":"codex-api-key:1:workspace"}"#,
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let payload: SnapshotListResponse = serde_json::from_slice(&body).expect("json");
+    assert_eq!(payload.provider, PROVIDER_CODEX);
+    assert_eq!(payload.snapshots.len(), 1);
+    assert_eq!(payload.snapshots[0].auth_id, "codex-api-key:1");
+    assert_eq!(
+        payload.snapshots[0].workspace_id.as_deref(),
+        Some("codex-api-key:1:workspace")
+    );
+    assert_eq!(
+        payload.snapshots[0].workspace_name.as_deref(),
+        Some("Third Party Team")
+    );
+    assert_eq!(payload.snapshots[0].source, "codex_api_key");
+    assert!(payload.snapshots[0].snapshot.is_none());
+}

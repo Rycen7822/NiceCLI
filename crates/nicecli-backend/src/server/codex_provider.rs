@@ -2,7 +2,9 @@ use super::*;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use futures_util::StreamExt;
 use nicecli_auth::CodexLoginError;
-use nicecli_quota::{ListOptions, RefreshOptions, SnapshotListResponse};
+use nicecli_quota::{
+    CodexQuotaSnapshotEnvelope, ListOptions, RefreshOptions, SnapshotListResponse, PROVIDER_CODEX,
+};
 use nicecli_runtime::{
     CodexCallerError, CodexCompactCaller, CodexCompactRequest, CodexResponsesCaller,
     CodexResponsesRequest, ExecuteWithRetryError, ExecuteWithRetryOptions, RuntimeConductorError,
@@ -17,6 +19,8 @@ const PUBLIC_CODEX_RESPONSES_PATH: &str = "/responses";
 const PUBLIC_CODEX_RESPONSES_COMPACT_PATH: &str = "/responses/compact";
 const DEFAULT_PUBLIC_CODEX_USER_AGENT: &str =
     "codex_cli_rs/0.116.0 (Windows NT 10.0; Win64; x64) NiceCLI";
+const CODEX_API_KEY_QUOTA_SOURCE: &str = "codex_api_key";
+const CODEX_API_KEY_WORKSPACE_TYPE: &str = "third_party";
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -45,6 +49,8 @@ pub(super) struct CodexApiKeyModelEntry {
 pub(super) struct CodexApiKeyEntry {
     #[serde(rename = "api-key")]
     api_key: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    label: String,
     #[serde(skip_serializing_if = "is_zero_i64")]
     priority: i64,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -66,6 +72,7 @@ pub(super) struct CodexApiKeyEntry {
 pub(super) struct CodexApiKeyPatchValue {
     #[serde(rename = "api-key")]
     api_key: Option<String>,
+    label: Option<String>,
     prefix: Option<String>,
     #[serde(rename = "base-url")]
     base_url: Option<String>,
@@ -988,6 +995,9 @@ pub(super) async fn patch_codex_api_keys(
     if let Some(api_key) = value.api_key {
         entry.api_key = api_key.trim().to_string();
     }
+    if let Some(label) = value.label {
+        entry.label = label.trim().to_string();
+    }
     if let Some(prefix) = value.prefix {
         entry.prefix = prefix.trim().to_string();
     }
@@ -1113,16 +1123,29 @@ pub(super) async fn get_codex_quota_snapshots(
         return response;
     }
 
+    let config = match load_current_config_json(&state) {
+        Ok(config) => config,
+        Err(error) => return config_error_response(error),
+    };
+    let refresh = parse_management_bool(query.refresh.as_deref());
+    let auth_id = query.auth_id.unwrap_or_default();
+    let workspace_id = query.workspace_id.unwrap_or_default();
+    let api_key_snapshots =
+        codex_api_key_quota_snapshots_from_config_json(&config, &auth_id, &workspace_id);
+
     match state
         .quota_service
         .list_snapshots_with_options(ListOptions {
-            refresh: parse_management_bool(query.refresh.as_deref()),
-            auth_id: query.auth_id.unwrap_or_default(),
-            workspace_id: query.workspace_id.unwrap_or_default(),
+            refresh,
+            auth_id,
+            workspace_id,
         })
         .await
     {
-        Ok(snapshots) => Json(SnapshotListResponse::from_snapshots(snapshots)).into_response(),
+        Ok(mut snapshots) => {
+            snapshots.extend(api_key_snapshots);
+            Json(SnapshotListResponse::from_snapshots(snapshots)).into_response()
+        }
         Err(error) => json_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("failed to load codex quota snapshots: {error}"),
@@ -1143,6 +1166,15 @@ pub(super) async fn refresh_codex_quota_snapshots(
         Ok(request) => request.unwrap_or_default(),
         Err(response) => return response,
     };
+    let config = match load_current_config_json(&state) {
+        Ok(config) => config,
+        Err(error) => return config_error_response(error),
+    };
+    let api_key_snapshots = codex_api_key_quota_snapshots_from_config_json(
+        &config,
+        &request.auth_id,
+        &request.workspace_id,
+    );
 
     match state
         .quota_service
@@ -1152,12 +1184,72 @@ pub(super) async fn refresh_codex_quota_snapshots(
         })
         .await
     {
-        Ok(snapshots) => Json(SnapshotListResponse::from_snapshots(snapshots)).into_response(),
+        Ok(mut snapshots) => {
+            snapshots.extend(api_key_snapshots);
+            Json(SnapshotListResponse::from_snapshots(snapshots)).into_response()
+        }
         Err(error) => json_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("failed to refresh codex quota snapshots: {error}"),
         ),
     }
+}
+
+fn codex_api_key_quota_snapshots_from_config_json(
+    config: &JsonValue,
+    auth_id_filter: &str,
+    workspace_id_filter: &str,
+) -> Vec<CodexQuotaSnapshotEnvelope> {
+    let auth_id_filter = auth_id_filter.trim();
+    let workspace_id_filter = workspace_id_filter.trim();
+    let fetched_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+    codex_api_key_entries_from_config_json(config)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            let base_url = entry.base_url.trim().to_string();
+            if base_url.is_empty() {
+                return None;
+            }
+
+            let auth_id = format!("codex-api-key:{}", index + 1);
+            let workspace_id = format!("{auth_id}:workspace");
+            if !auth_id_filter.is_empty() && auth_id_filter != auth_id {
+                return None;
+            }
+            if !workspace_id_filter.is_empty() && workspace_id_filter != workspace_id {
+                return None;
+            }
+
+            let label = entry.label.trim().to_string();
+            let display_name = if label.is_empty() {
+                base_url.clone()
+            } else {
+                label
+            };
+            let auth_label = Some(display_name.clone());
+            let auth_note = Some(base_url.clone());
+
+            Some(CodexQuotaSnapshotEnvelope {
+                provider: PROVIDER_CODEX.to_string(),
+                auth_id,
+                auth_label: auth_label.clone(),
+                auth_note,
+                auth_file_name: None,
+                account_email: None,
+                account_plan: None,
+                workspace_id: Some(workspace_id),
+                workspace_name: auth_label,
+                workspace_type: Some(CODEX_API_KEY_WORKSPACE_TYPE.to_string()),
+                snapshot: None,
+                source: CODEX_API_KEY_QUOTA_SOURCE.to_string(),
+                fetched_at: fetched_at.clone(),
+                stale: false,
+                error: None,
+            })
+        })
+        .collect()
 }
 
 pub(super) async fn get_codex_auth_url(
@@ -1483,6 +1575,7 @@ fn sanitize_loaded_codex_api_key_entries(entries: Vec<CodexApiKeyEntry>) -> Vec<
     let mut normalized = Vec::new();
 
     for mut entry in entries {
+        entry.label = entry.label.trim().to_string();
         entry.prefix = normalize_model_prefix(&entry.prefix);
         entry.base_url = entry.base_url.trim().to_string();
         entry.headers = entry.headers.and_then(normalize_headers);
@@ -1498,6 +1591,7 @@ fn sanitize_loaded_codex_api_key_entries(entries: Vec<CodexApiKeyEntry>) -> Vec<
 
 fn normalize_codex_api_key_entry_for_write(mut entry: CodexApiKeyEntry) -> CodexApiKeyEntry {
     entry.api_key = entry.api_key.trim().to_string();
+    entry.label = entry.label.trim().to_string();
     entry.prefix = normalize_model_prefix(&entry.prefix);
     entry.base_url = entry.base_url.trim().to_string();
     entry.proxy_url = entry.proxy_url.trim().to_string();

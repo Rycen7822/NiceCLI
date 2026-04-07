@@ -626,11 +626,16 @@ textarea.form-input {
 }
 
 .auth-file-name,
+.api-key-label,
 .openai-provider-name {
     font-size: 15px;
     font-weight: 620;
     color: var(--text);
     word-break: break-word;
+}
+
+.api-key-label {
+    margin-bottom: 6px;
 }
 
 .auth-file-note,

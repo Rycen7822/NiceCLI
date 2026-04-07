@@ -664,7 +664,7 @@ async fn manages_codex_api_keys_via_rust_routes() {
     fs::write(
         state.bootstrap.config_path(),
         format!(
-            "host: 127.0.0.1\nport: 8317\nauth-dir: {}\ncodex-api-key:\n  - api-key: \" codex-1 \"\n    prefix: \"/team/\"\n    base-url: \" https://codex.local \"\n    websockets: true\n    headers:\n      \" X-Test \": \" demo \"\n      Empty: \"\"\n    models:\n      - name: \" gpt-5 \"\n        alias: \" demo-gpt5 \"\n      - name: \"\"\n        alias: \"\"\n    excluded-models:\n      - \" GPT-5 \"\n      - gpt-5\n",
+            "host: 127.0.0.1\nport: 8317\nauth-dir: {}\ncodex-api-key:\n  - api-key: \" codex-1 \"\n    label: \" Team Alpha \"\n    prefix: \"/team/\"\n    base-url: \" https://codex.local \"\n    websockets: true\n    headers:\n      \" X-Test \": \" demo \"\n      Empty: \"\"\n    models:\n      - name: \" gpt-5 \"\n        alias: \" demo-gpt5 \"\n      - name: \"\"\n        alias: \"\"\n    excluded-models:\n      - \" GPT-5 \"\n      - gpt-5\n",
             state.auth_dir.to_string_lossy().replace('\\', "/")
         ),
     )
@@ -691,6 +691,7 @@ async fn manages_codex_api_keys_via_rust_routes() {
             "codex-api-key": [
                 {
                     "api-key": " codex-1 ",
+                    "label": "Team Alpha",
                     "prefix": "team",
                     "base-url": "https://codex.local",
                     "websockets": true,
@@ -722,7 +723,7 @@ async fn manages_codex_api_keys_via_rust_routes() {
                 .header("X-Management-Key", "secret")
                 .header("Content-Type", "application/json")
                 .body(Body::from(
-                    r#"{"items":[{"api-key":" codex-put ","prefix":" /alpha/ ","base-url":" https://codex-a.local ","websockets":true,"proxy-url":" http://127.0.0.1:7890 ","headers":{" Authorization ":" Bearer demo ","Empty":" "},"models":[{"name":" gpt-5 ","alias":" team-gpt5 "},{"name":"","alias":""}],"excluded-models":[" GPT-5 ","gpt-5"]},{"api-key":" ","base-url":" https://codex-empty.local "},{"api-key":"codex-second","prefix":" /beta/ ","base-url":" https://codex-b.local "}]}"#,
+                    r#"{"items":[{"api-key":" codex-put ","label":" Team Put ","prefix":" /alpha/ ","base-url":" https://codex-a.local ","websockets":true,"proxy-url":" http://127.0.0.1:7890 ","headers":{" Authorization ":" Bearer demo ","Empty":" "},"models":[{"name":" gpt-5 ","alias":" team-gpt5 "},{"name":"","alias":""}],"excluded-models":[" GPT-5 ","gpt-5"]},{"api-key":" ","base-url":" https://codex-empty.local "},{"api-key":"codex-second","prefix":" /beta/ ","base-url":" https://codex-b.local "}]}"#,
                 ))
                 .expect("request"),
         )
@@ -738,7 +739,7 @@ async fn manages_codex_api_keys_via_rust_routes() {
                 .header("X-Management-Key", "secret")
                 .header("Content-Type", "application/json")
                 .body(Body::from(
-                    r#"{"match":"codex-put","value":{"api-key":"codex-next","prefix":" /lab/ ","base-url":" https://codex-c.local ","proxy-url":" http://127.0.0.1:8899 ","models":[{"name":" gpt-5-mini ","alias":" team-mini "},{"name":"","alias":""}],"headers":{"X-New":" value "},"excluded-models":[" GPT-5-MINI ","gpt-5-mini"]}}"#,
+                    r#"{"match":"codex-put","value":{"api-key":"codex-next","label":" Team Next ","prefix":" /lab/ ","base-url":" https://codex-c.local ","proxy-url":" http://127.0.0.1:8899 ","models":[{"name":" gpt-5-mini ","alias":" team-mini "},{"name":"","alias":""}],"headers":{"X-New":" value "},"excluded-models":[" GPT-5-MINI ","gpt-5-mini"]}}"#,
                 ))
                 .expect("request"),
         )
@@ -767,6 +768,7 @@ async fn manages_codex_api_keys_via_rust_routes() {
             "codex-api-key": [
                 {
                     "api-key": "codex-next",
+                    "label": "Team Next",
                     "prefix": "lab",
                     "base-url": "https://codex-c.local",
                     "websockets": true,

@@ -265,7 +265,14 @@ fn start_in_process_backend(
             if let Some(tx) = started_tx.take() {
                 let _ = tx.send(Ok(()));
             }
-            start_model_catalog_refresh_task();
+            let model_catalog_cache_path = state
+                .bootstrap
+                .config_path()
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or_else(|| std::path::Path::new("."))
+                .join(".nicecli-model-catalog.json");
+            start_model_catalog_refresh_task(model_catalog_cache_path);
             serve_state_with_shutdown(state, listener, async move {
                 let _ = shutdown_rx.await;
             })

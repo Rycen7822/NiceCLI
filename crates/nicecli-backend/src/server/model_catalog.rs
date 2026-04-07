@@ -1,5 +1,7 @@
 use super::config_json_value;
-use nicecli_models::{lookup_static_model_info, static_model_definitions_by_channel, ModelInfo};
+use nicecli_models::{
+    lookup_static_model_info, static_model_definitions_by_channel, ModelInfo, ThinkingSupport,
+};
 use nicecli_runtime::AuthSnapshot;
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashSet;
@@ -10,6 +12,28 @@ mod oauth_metadata;
 pub(in crate::server) use helpers::*;
 pub(in crate::server) use oauth_metadata::*;
 
+const CODEX_BUNDLED_MODEL_SLUGS: &[&str] = &[
+    "gpt-5.3-codex",
+    "gpt-5.4",
+    "gpt-5.2-codex",
+    "gpt-5.1-codex-max",
+    "gpt-5.2",
+    "gpt-5.1-codex-mini",
+];
+const CODEX_COMPAT_BASE_INSTRUCTIONS: &str = concat!(
+    "You are Codex, based on GPT-5. You are running as a coding agent in the Codex CLI on a user's computer.\n\n",
+    "When working:\n",
+    "- Solve the user's task end-to-end when practical.\n",
+    "- Search the codebase before making assumptions.\n",
+    "- Prefer `rg` and focused, minimal edits.\n",
+    "- Preserve user changes and avoid unrelated refactors.\n",
+    "- Do not use destructive git commands unless explicitly requested.\n",
+    "- Keep progress updates concise and informative.\n",
+    "- In review mode, prioritize bugs, regressions, risks, and missing tests.\n",
+    "- Final answers should be concise, actionable, and reference the files you changed.\n",
+);
+const CODEX_REMOTE_PRIORITY_START: i32 = 100;
+
 pub(super) fn collect_public_openai_models(
     config: &JsonValue,
     snapshots: &[AuthSnapshot],
@@ -17,6 +41,18 @@ pub(super) fn collect_public_openai_models(
     collect_public_openai_model_infos(config, snapshots)
         .into_iter()
         .map(|model| openai_public_payload_from_model_info(&model))
+        .collect()
+}
+
+pub(super) fn collect_public_codex_models(
+    config: &JsonValue,
+    snapshots: &[AuthSnapshot],
+) -> Vec<JsonValue> {
+    collect_public_codex_model_infos(config, snapshots)
+        .into_iter()
+        .filter(|model| codex_public_model_needs_overlay(&model.id))
+        .enumerate()
+        .map(|(index, model)| codex_public_payload_from_model_info(&model, index))
         .collect()
 }
 
@@ -141,6 +177,37 @@ pub(in crate::server) fn collect_public_openai_model_infos(
             "qwen",
             "kimi",
         ],
+        force_prefix,
+        &mut seen,
+        &mut models,
+    );
+
+    models
+}
+
+pub(in crate::server) fn collect_public_codex_model_infos(
+    config: &JsonValue,
+    snapshots: &[AuthSnapshot],
+) -> Vec<ModelInfo> {
+    let force_prefix = config_json_value(config, "force-model-prefix")
+        .and_then(JsonValue::as_bool)
+        .unwrap_or(false);
+    let mut models = Vec::new();
+    let mut seen = HashSet::new();
+
+    append_public_model_infos_from_config(
+        config,
+        "codex-api-key",
+        "codex",
+        None,
+        force_prefix,
+        &mut seen,
+        &mut models,
+    );
+    append_public_model_infos_from_snapshots(
+        config,
+        snapshots,
+        &["codex"],
         force_prefix,
         &mut seen,
         &mut models,
@@ -504,4 +571,160 @@ pub(in crate::server) fn openai_public_payload_from_model_info(model: &ModelInfo
         payload.insert("owned_by".to_string(), json!(owned_by));
     }
     JsonValue::Object(payload)
+}
+
+fn codex_public_model_needs_overlay(model_id: &str) -> bool {
+    let normalized = normalize_model_identifier(model_id);
+    !CODEX_BUNDLED_MODEL_SLUGS
+        .iter()
+        .any(|slug| normalized == normalize_model_identifier(slug))
+}
+
+fn codex_public_payload_from_model_info(model: &ModelInfo, index: usize) -> JsonValue {
+    let reasoning_levels = codex_reasoning_levels_from_model_info(model);
+    let default_reasoning_level =
+        codex_default_reasoning_level_from_supported(&reasoning_levels).map(JsonValue::String);
+    let supports_reasoning_summaries =
+        !reasoning_levels.is_empty() && codex_model_supports_rich_tools(model);
+    let support_verbosity = codex_model_supports_rich_tools(model);
+
+    json!({
+        "slug": &model.id,
+        "display_name": &model.id,
+        "description": model.description.clone(),
+        "default_reasoning_level": default_reasoning_level,
+        "supported_reasoning_levels": reasoning_levels,
+        "shell_type": "shell_command",
+        "visibility": "list",
+        "supported_in_api": true,
+        "priority": CODEX_REMOTE_PRIORITY_START + i32::try_from(index).unwrap_or(i32::MAX),
+        "availability_nux": JsonValue::Null,
+        "upgrade": JsonValue::Null,
+        "base_instructions": CODEX_COMPAT_BASE_INSTRUCTIONS,
+        "model_messages": JsonValue::Null,
+        "supports_reasoning_summaries": supports_reasoning_summaries,
+        "default_reasoning_summary": if supports_reasoning_summaries { "none" } else { "auto" },
+        "support_verbosity": support_verbosity,
+        "default_verbosity": if support_verbosity { json!("low") } else { JsonValue::Null },
+        "apply_patch_tool_type": "freeform",
+        "web_search_tool_type": "text",
+        "truncation_policy": {
+            "mode": "tokens",
+            "limit": 10_000,
+        },
+        "supports_parallel_tool_calls": codex_model_supports_rich_tools(model),
+        "supports_image_detail_original": false,
+        "context_window": model.context_length,
+        "auto_compact_token_limit": JsonValue::Null,
+        "effective_context_window_percent": 95,
+        "experimental_supported_tools": [],
+        "input_modalities": codex_input_modalities_from_model_info(model),
+        "supports_search_tool": false,
+    })
+}
+
+fn codex_reasoning_levels_from_model_info(model: &ModelInfo) -> Vec<JsonValue> {
+    codex_reasoning_level_names(model.thinking.as_ref())
+        .into_iter()
+        .map(|level| {
+            json!({
+                "effort": level,
+                "description": codex_reasoning_level_description(&level),
+            })
+        })
+        .collect()
+}
+
+fn codex_reasoning_level_names(thinking: Option<&ThinkingSupport>) -> Vec<String> {
+    let Some(thinking) = thinking else {
+        return Vec::new();
+    };
+
+    if !thinking.levels.is_empty() {
+        let mut levels = thinking
+            .levels
+            .iter()
+            .filter_map(|level| codex_reasoning_level_name(level))
+            .collect::<Vec<_>>();
+        levels.dedup();
+        return levels;
+    }
+
+    if thinking.max.is_some() || thinking.min.is_some() {
+        return vec!["low".to_string(), "medium".to_string(), "high".to_string()];
+    }
+
+    Vec::new()
+}
+
+fn codex_reasoning_level_name(level: &str) -> Option<String> {
+    match normalize_model_identifier(level).as_str() {
+        "none" => Some("none".to_string()),
+        "minimal" => Some("minimal".to_string()),
+        "low" => Some("low".to_string()),
+        "medium" => Some("medium".to_string()),
+        "high" => Some("high".to_string()),
+        "xhigh" | "max" => Some("xhigh".to_string()),
+        _ => None,
+    }
+}
+
+fn codex_reasoning_level_description(level: &str) -> &'static str {
+    match level {
+        "none" => "Uses no additional deliberate reasoning",
+        "minimal" => "Fast responses with minimal reasoning",
+        "low" => "Fast responses with lighter reasoning",
+        "medium" => "Balances speed and reasoning depth for everyday tasks",
+        "high" => "Greater reasoning depth for complex problems",
+        "xhigh" => "Extra high reasoning depth for complex problems",
+        _ => "Reasoning mode",
+    }
+}
+
+fn codex_default_reasoning_level_from_supported(levels: &[JsonValue]) -> Option<String> {
+    let supported = levels
+        .iter()
+        .filter_map(|level| level.get("effort"))
+        .filter_map(JsonValue::as_str)
+        .collect::<Vec<_>>();
+
+    for preferred in ["medium", "low", "minimal", "high", "xhigh", "none"] {
+        if supported.contains(&preferred) {
+            return Some(preferred.to_string());
+        }
+    }
+
+    supported.first().map(|value| (*value).to_string())
+}
+
+fn codex_model_supports_rich_tools(model: &ModelInfo) -> bool {
+    model
+        .supported_parameters
+        .iter()
+        .any(|parameter| normalize_model_identifier(parameter) == "tools")
+        || model
+            .owned_by
+            .as_deref()
+            .is_some_and(|owner| normalize_model_identifier(owner) == "openai")
+        || normalize_model_identifier(&model.id).starts_with("gpt-")
+}
+
+fn codex_input_modalities_from_model_info(model: &ModelInfo) -> Vec<String> {
+    let mapped = model
+        .supported_input_modalities
+        .iter()
+        .filter_map(
+            |modality| match normalize_model_identifier(modality).as_str() {
+                "text" => Some("text".to_string()),
+                "image" => Some("image".to_string()),
+                _ => None,
+            },
+        )
+        .collect::<Vec<_>>();
+
+    if mapped.is_empty() {
+        vec!["text".to_string(), "image".to_string()]
+    } else {
+        mapped
+    }
 }

@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::sync::{LazyLock, RwLock};
 use std::time::Duration;
 use thiserror::Error;
+
+mod cache;
 
 const EMBEDDED_MODELS_JSON: &str = include_str!("../assets/models.json");
 const MODEL_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -18,6 +21,8 @@ pub enum ModelCatalogError {
     Invalid(String),
     #[error("failed to fetch model catalog: {0}")]
     Fetch(#[from] reqwest::Error),
+    #[error("failed to access model catalog cache: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -157,7 +162,31 @@ pub fn replace_global_model_catalog_from_bytes(
     Ok(changed)
 }
 
+pub fn load_global_model_catalog_from_path(
+    path: &Path,
+) -> Result<Option<Vec<String>>, ModelCatalogError> {
+    let Some(parsed) = cache::load_catalog_from_path(path)? else {
+        return Ok(None);
+    };
+
+    let mut guard = GLOBAL_CATALOG.write().expect("model catalog lock poisoned");
+    let changed = detect_changed_providers(&guard, &parsed);
+    *guard = parsed;
+    Ok(Some(changed))
+}
+
+pub fn persist_global_model_catalog_to_path(path: &Path) -> Result<(), ModelCatalogError> {
+    let guard = GLOBAL_CATALOG.read().expect("model catalog lock poisoned");
+    cache::save_catalog_to_path(path, &guard)
+}
+
 pub async fn refresh_global_model_catalog_from_remote(
+) -> Result<Option<ModelRefreshResult>, ModelCatalogError> {
+    refresh_global_model_catalog_from_remote_with_cache(None).await
+}
+
+pub async fn refresh_global_model_catalog_from_remote_with_cache(
+    cache_path: Option<&Path>,
 ) -> Result<Option<ModelRefreshResult>, ModelCatalogError> {
     let client = reqwest::Client::builder()
         .timeout(MODEL_FETCH_TIMEOUT)
@@ -178,6 +207,9 @@ pub async fn refresh_global_model_catalog_from_remote(
         };
 
         let changed = replace_global_model_catalog_from_bytes(bytes.as_ref())?;
+        if let Some(cache_path) = cache_path {
+            persist_global_model_catalog_to_path(cache_path)?;
+        }
         return Ok(Some(ModelRefreshResult {
             source: url.to_string(),
             changed_providers: changed,
@@ -318,8 +350,17 @@ fn normalize_id(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        detect_changed_providers, models_for_channel, parse_catalog_bytes, StaticModelsJson,
+        detect_changed_providers, load_global_model_catalog_from_path, models_for_channel,
+        parse_catalog_bytes, persist_global_model_catalog_to_path,
+        replace_global_model_catalog_from_bytes, static_model_definitions_by_channel, ModelInfo,
+        StaticModelsJson,
     };
+    use serde_json::json;
+    use std::path::PathBuf;
+    use std::sync::{LazyLock, Mutex};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static CATALOG_TEST_GUARD: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
     fn loads_embedded_catalog_and_picks_codex_plan_sections() {
@@ -334,6 +375,20 @@ mod tests {
         assert!(!plus_models.is_empty());
         assert!(!pro_models.is_empty());
         assert_ne!(team_models, plus_models);
+    }
+
+    #[test]
+    fn bundled_catalog_includes_gpt_5_4_mini_for_all_codex_plans() {
+        let catalog =
+            parse_catalog_bytes(include_bytes!("../assets/models.json")).expect("catalog");
+
+        for plan in ["free", "team", "plus", "pro"] {
+            let models = models_for_channel(&catalog, "codex", Some(plan));
+            assert!(
+                models.iter().any(|model| model.id == "gpt-5.4-mini"),
+                "expected gpt-5.4-mini in codex {plan} catalog"
+            );
+        }
     }
 
     #[test]
@@ -354,5 +409,72 @@ mod tests {
 
         let changed = detect_changed_providers(&old, &new);
         assert_eq!(changed, vec!["codex".to_string()]);
+    }
+
+    #[test]
+    fn persists_and_loads_catalog_cache_roundtrip() {
+        let _guard = CATALOG_TEST_GUARD.lock().expect("catalog test lock");
+        let original_bytes = {
+            let guard = super::GLOBAL_CATALOG
+                .read()
+                .expect("model catalog lock poisoned");
+            serde_json::to_vec(&*guard).expect("serialize original catalog")
+        };
+        let cache_path = unique_cache_path();
+        let cached_catalog = serde_json::to_vec(&sample_catalog("cached-codex-team"))
+            .expect("serialize sample catalog");
+
+        replace_global_model_catalog_from_bytes(&cached_catalog).expect("replace global catalog");
+        persist_global_model_catalog_to_path(&cache_path).expect("persist catalog cache");
+
+        replace_global_model_catalog_from_bytes(&original_bytes)
+            .expect("restore embedded catalog before load");
+        let changed = load_global_model_catalog_from_path(&cache_path)
+            .expect("load catalog cache")
+            .expect("catalog cache should exist");
+
+        assert!(changed.iter().any(|provider| provider == "codex"));
+        assert!(static_model_definitions_by_channel("codex", Some("team"))
+            .iter()
+            .any(|model| model.id == "cached-codex-team"));
+
+        replace_global_model_catalog_from_bytes(&original_bytes).expect("restore original catalog");
+        let _ = std::fs::remove_file(&cache_path);
+    }
+
+    fn unique_cache_path() -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "nicecli-model-catalog-test-{}-{timestamp}.json",
+            std::process::id()
+        ))
+    }
+
+    fn sample_catalog(codex_team_id: &str) -> serde_json::Value {
+        json!({
+            "claude": [sample_model("claude-test")],
+            "gemini": [sample_model("gemini-test")],
+            "vertex": [sample_model("vertex-test")],
+            "gemini-cli": [sample_model("gemini-cli-test")],
+            "aistudio": [sample_model("aistudio-test")],
+            "codex-free": [sample_model("codex-free-test")],
+            "codex-team": [sample_model(codex_team_id)],
+            "codex-plus": [sample_model("codex-plus-test")],
+            "codex-pro": [sample_model("codex-pro-test")],
+            "qwen": [sample_model("qwen-test")],
+            "kimi": [sample_model("kimi-test")],
+            "antigravity": [sample_model("antigravity-test")]
+        })
+    }
+
+    fn sample_model(id: &str) -> ModelInfo {
+        ModelInfo {
+            id: id.to_string(),
+            object: "model".to_string(),
+            ..ModelInfo::default()
+        }
     }
 }

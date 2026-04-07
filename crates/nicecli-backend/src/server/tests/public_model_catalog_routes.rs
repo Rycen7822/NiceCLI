@@ -278,6 +278,58 @@ async fn returns_static_codex_public_models_from_auth_snapshot_with_alias_prefix
 }
 
 #[tokio::test]
+async fn returns_codex_compatible_models_for_client_version_requests() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let state = load_fixture_state(&temp_dir);
+    fs::write(
+        state.bootstrap.config_path(),
+        format!(
+            "host: 127.0.0.1\nport: 8317\nauth-dir: {}\ncodex-api-key:\n  - api-key: codex-1\n    base-url: https://codex.local\n",
+            state.auth_dir.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .expect("config file");
+
+    let response = build_router(state)
+        .oneshot(
+            Request::builder()
+                .uri("/v1/models?client_version=0.99.0")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload = response_json(response).await;
+    let models = payload["models"].as_array().expect("models array");
+    let slugs = models
+        .iter()
+        .filter_map(|item| item.get("slug").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+
+    assert!(slugs.contains(&"gpt-5.4-mini"));
+    assert!(!slugs.contains(&"gpt-5.4"));
+    assert!(payload.get("object").is_none());
+    assert!(payload.get("data").is_none());
+
+    let gpt_5_4_mini = models
+        .iter()
+        .find(|item| item["slug"].as_str() == Some("gpt-5.4-mini"))
+        .expect("gpt-5.4-mini entry");
+    assert_eq!(gpt_5_4_mini["display_name"].as_str(), Some("gpt-5.4-mini"));
+    assert_eq!(gpt_5_4_mini["shell_type"].as_str(), Some("shell_command"));
+    assert_eq!(
+        gpt_5_4_mini["supports_parallel_tool_calls"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(gpt_5_4_mini["support_verbosity"].as_bool(), Some(true));
+    assert!(gpt_5_4_mini["base_instructions"]
+        .as_str()
+        .is_some_and(|value| !value.trim().is_empty()));
+}
+
+#[tokio::test]
 async fn returns_static_gemini_public_models_from_auth_snapshot_without_explicit_models() {
     let temp_dir = TempDir::new().expect("temp dir");
     let state = load_fixture_state(&temp_dir);

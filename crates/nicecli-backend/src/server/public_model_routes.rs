@@ -1,4 +1,4 @@
-use super::model_catalog::collect_public_openai_models;
+use super::model_catalog::{collect_public_codex_models, collect_public_openai_models};
 use super::{
     auth_snapshot_store_error_response, collect_public_gemini_models, config_error_response,
     ensure_public_api_key, execute_public_gemini_model_action, find_public_gemini_model,
@@ -40,6 +40,10 @@ async fn get_v1_models(
         Ok(context) => context,
         Err(response) => return response,
     };
+
+    if let Some(response) = maybe_public_codex_models_response(&query, &config, &snapshots) {
+        return response;
+    }
 
     if let Some(response) = maybe_public_claude_models_response(&headers, &config, &snapshots) {
         return response;
@@ -130,4 +134,24 @@ fn load_public_model_context(
         .list_snapshots()
         .map_err(auth_snapshot_store_error_response)?;
     Ok((config, snapshots))
+}
+
+fn maybe_public_codex_models_response(
+    query: &PublicApiAuthQuery,
+    config: &JsonValue,
+    snapshots: &[AuthSnapshot],
+) -> Option<Response> {
+    let client_version = query
+        .client_version
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+
+    let _ = client_version;
+    Some(
+        Json(json!({
+            "models": collect_public_codex_models(config, snapshots),
+        }))
+        .into_response(),
+    )
 }

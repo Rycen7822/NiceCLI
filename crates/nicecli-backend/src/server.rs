@@ -14,7 +14,8 @@ use nicecli_auth::{
 };
 use nicecli_config::{ConfigError, NiceCliConfig};
 use nicecli_models::{
-    refresh_global_model_catalog_from_remote, static_model_definitions_by_channel, ModelInfo,
+    load_global_model_catalog_from_path, refresh_global_model_catalog_from_remote_with_cache,
+    static_model_definitions_by_channel, ModelInfo,
 };
 use nicecli_quota::CodexQuotaService;
 use nicecli_runtime::{
@@ -113,6 +114,7 @@ struct OAuthCallbackQuery {
 struct PublicApiAuthQuery {
     key: Option<String>,
     auth_token: Option<String>,
+    client_version: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -209,6 +211,24 @@ static MODEL_CATALOG_REFRESH_TASK: Once = Once::new();
 pub fn load_state_from_bootstrap(
     bootstrap: BackendBootstrap,
 ) -> Result<BackendAppState, BackendServerError> {
+    let cache_path = model_catalog_cache_path(bootstrap.config_path());
+    match load_global_model_catalog_from_path(&cache_path) {
+        Ok(Some(changed)) if !changed.is_empty() => {
+            eprintln!(
+                "[nicecli-models] startup loaded cached model catalog {:?} from {}",
+                changed,
+                cache_path.display()
+            );
+        }
+        Ok(Some(_)) | Ok(None) => {}
+        Err(error) => {
+            eprintln!(
+                "[nicecli-models] startup failed to load cached model catalog from {}: {error}",
+                cache_path.display()
+            );
+        }
+    }
+
     let config = bootstrap.load_config()?;
     let auth_dir = resolve_auth_dir(bootstrap.config_path(), &config)?;
     let quota_service = Arc::new(CodexQuotaService::new(
@@ -344,20 +364,20 @@ fn apply_desktop_cors_headers(headers: &mut HeaderMap) {
     headers.insert(VARY, HeaderValue::from_static("Origin"));
 }
 
-pub fn start_model_catalog_refresh_task() {
-    MODEL_CATALOG_REFRESH_TASK.call_once(|| {
-        tokio::spawn(async {
-            refresh_model_catalog_once("startup").await;
+pub fn start_model_catalog_refresh_task(cache_path: PathBuf) {
+    MODEL_CATALOG_REFRESH_TASK.call_once(move || {
+        tokio::spawn(async move {
+            refresh_model_catalog_once("startup", Some(cache_path.clone())).await;
             loop {
                 tokio::time::sleep(MODEL_CATALOG_REFRESH_INTERVAL).await;
-                refresh_model_catalog_once("periodic").await;
+                refresh_model_catalog_once("periodic", Some(cache_path.clone())).await;
             }
         });
     });
 }
 
-async fn refresh_model_catalog_once(label: &str) {
-    match refresh_global_model_catalog_from_remote().await {
+async fn refresh_model_catalog_once(label: &str, cache_path: Option<PathBuf>) {
+    match refresh_global_model_catalog_from_remote_with_cache(cache_path.as_deref()).await {
         Ok(Some(result)) if !result.changed_providers.is_empty() => {
             eprintln!(
                 "[nicecli-models] {label} model catalog refresh updated {:?} from {}",
@@ -375,8 +395,9 @@ pub async fn serve(
     bootstrap: BackendBootstrap,
     listener: TcpListener,
 ) -> Result<(), BackendServerError> {
+    let cache_path = model_catalog_cache_path(bootstrap.config_path());
     let state = load_state_from_bootstrap(bootstrap)?;
-    start_model_catalog_refresh_task();
+    start_model_catalog_refresh_task(cache_path);
     serve_state_with_shutdown(state, listener, std::future::pending::<()>()).await
 }
 
@@ -463,6 +484,14 @@ fn normalize_auth_dir(config_path: &Path, auth_dir: &str) -> PathBuf {
         .parent()
         .map(|parent| parent.join(&candidate))
         .unwrap_or(candidate)
+}
+
+fn model_catalog_cache_path(config_path: &Path) -> PathBuf {
+    let parent = config_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    parent.join(".nicecli-model-catalog.json")
 }
 
 fn ensure_public_api_key(

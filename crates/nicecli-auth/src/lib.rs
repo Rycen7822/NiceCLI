@@ -1,6 +1,7 @@
 mod anthropic_login;
 mod antigravity_login;
 mod codex_login;
+mod codex_profile;
 mod gemini_cli_login;
 mod gemini_web;
 mod kimi_login;
@@ -16,8 +17,14 @@ pub use antigravity_login::{
     AntigravityLoginEndpoints, AntigravityLoginError, AntigravityLoginService,
     CompletedAntigravityLogin, StartedAntigravityLogin,
 };
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 pub use codex_login::{
     CodexLoginEndpoints, CodexLoginError, CodexLoginService, CompletedCodexLogin, StartedCodexLogin,
+};
+pub use codex_profile::{
+    fetch_codex_account_profile, is_generic_codex_workspace_name, parse_codex_account_profile,
+    CodexAccountProfile, CodexAccountProfileError, DEFAULT_CODEX_ACCOUNT_CHECK_URL,
 };
 pub use gemini_cli_login::{
     CompletedGeminiCliLogin, GeminiCliLoginEndpoints, GeminiCliLoginError, GeminiCliLoginService,
@@ -115,6 +122,31 @@ pub struct PatchAuthFileStatus {
     pub disabled: bool,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+struct CodexJwtClaims {
+    #[serde(default)]
+    #[serde(rename = "https://api.openai.com/auth")]
+    codex_auth_info: CodexAuthInfo,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+struct CodexAuthInfo {
+    #[serde(default)]
+    chatgpt_account_id: String,
+    #[serde(default)]
+    organizations: Vec<CodexOrganization>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+struct CodexOrganization {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    is_default: bool,
+}
+
 pub fn list_auth_files(auth_dir: &Path) -> Result<Vec<AuthFileEntry>, AuthFileStoreError> {
     let mut files = Vec::new();
 
@@ -168,11 +200,7 @@ pub fn list_auth_files(auth_dir: &Path) -> Result<Vec<AuthFileEntry>, AuthFileSt
 
         let note = json
             .as_ref()
-            .and_then(|value| value.get("note"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
+            .and_then(|value| resolve_auth_file_note(value, &provider));
 
         let disabled = json
             .as_ref()
@@ -441,6 +469,88 @@ fn system_time_to_unix_millis(time: SystemTime) -> Option<u128> {
         .map(|duration| duration.as_millis())
 }
 
+fn resolve_auth_file_note(value: &Value, provider: &str) -> Option<String> {
+    explicit_auth_file_note(value).or_else(|| {
+        if provider.eq_ignore_ascii_case("codex") {
+            synthesize_codex_workspace_note(value)
+        } else {
+            None
+        }
+    })
+}
+
+fn explicit_auth_file_note(value: &Value) -> Option<String> {
+    value
+        .get("note")
+        .and_then(Value::as_str)
+        .and_then(trimmed_str)
+        .map(str::to_string)
+}
+
+fn synthesize_codex_workspace_note(value: &Value) -> Option<String> {
+    let root = value.as_object()?;
+    let id_token = first_non_empty([
+        string_path(root, &["id_token"]),
+        string_path(root, &["metadata", "id_token"]),
+        string_path(root, &["attributes", "id_token"]),
+    ])?;
+    let account_id = first_non_empty([
+        string_path(root, &["account_id"]),
+        string_path(root, &["metadata", "account_id"]),
+        string_path(root, &["attributes", "account_id"]),
+    ])
+    .unwrap_or_default();
+    let claims = parse_codex_claims(&id_token)?;
+    default_codex_workspace_note(&claims, &account_id)
+}
+
+fn parse_codex_claims(id_token: &str) -> Option<CodexJwtClaims> {
+    let mut parts = id_token.trim().split('.');
+    let _header = parts.next();
+    let payload = parts.next()?;
+    parts.next()?;
+    let decoded = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    serde_json::from_slice(&decoded).ok()
+}
+
+fn default_codex_workspace_note(claims: &CodexJwtClaims, account_id: &str) -> Option<String> {
+    let mut candidates = Vec::new();
+    if let Some(account_id) = trimmed_str(account_id) {
+        candidates.push(account_id.to_string());
+    }
+    if let Some(account_id) = trimmed_str(&claims.codex_auth_info.chatgpt_account_id) {
+        candidates.push(account_id.to_string());
+    }
+
+    for candidate in candidates {
+        for organization in &claims.codex_auth_info.organizations {
+            if organization
+                .id
+                .trim()
+                .eq_ignore_ascii_case(candidate.trim())
+            {
+                if let Some(title) = trimmed_str(&organization.title) {
+                    return Some(title.to_string());
+                }
+            }
+        }
+    }
+
+    for organization in &claims.codex_auth_info.organizations {
+        if organization.is_default {
+            if let Some(title) = trimmed_str(&organization.title) {
+                return Some(title.to_string());
+            }
+        }
+    }
+
+    claims
+        .codex_auth_info
+        .organizations
+        .iter()
+        .find_map(|organization| trimmed_str(&organization.title).map(str::to_string))
+}
+
 fn normalized_auth_file_stem(value: &str) -> Option<&str> {
     let file_name = Path::new(value)
         .file_name()
@@ -483,6 +593,31 @@ fn looks_like_generated_prefix(value: &str) -> bool {
         && value.chars().all(|ch| ch.is_ascii_alphanumeric())
         && !value.contains('.')
         && !value.contains('@')
+}
+
+fn string_path(root: &Map<String, Value>, path: &[&str]) -> Option<String> {
+    value_path(root, path)
+        .and_then(Value::as_str)
+        .and_then(trimmed_str)
+        .map(str::to_string)
+}
+
+fn value_path<'a>(root: &'a Map<String, Value>, path: &[&str]) -> Option<&'a Value> {
+    let mut current = root.get(*path.first()?)?;
+    for segment in path.iter().skip(1) {
+        current = current.as_object()?.get(*segment)?;
+    }
+    Some(current)
+}
+
+fn first_non_empty<I>(values: I) -> Option<String>
+where
+    I: IntoIterator<Item = Option<String>>,
+{
+    values
+        .into_iter()
+        .flatten()
+        .find(|value| !value.trim().is_empty())
 }
 
 fn looks_like_email(value: &str) -> bool {
@@ -529,6 +664,15 @@ fn is_email_local_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '%' | '+' | '-')
 }
 
+fn trimmed_str(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -536,9 +680,17 @@ mod tests {
         list_auth_files, patch_auth_file_fields, patch_auth_file_status, read_auth_file,
         write_auth_file, PatchAuthFileFields, PatchAuthFileStatus,
     };
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
     use serde_json::Value;
     use std::fs;
     use tempfile::TempDir;
+
+    fn build_jwt(payload_json: &str) -> String {
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(payload_json.as_bytes());
+        format!("{header}.{payload}.signature")
+    }
 
     #[test]
     fn extracts_email_and_plan_from_auth_file_name() {
@@ -598,6 +750,95 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].email.as_deref(), Some("demo@example.com"));
         assert_eq!(files[0].account_plan.as_deref(), Some("team"));
+        assert_eq!(files[0].note.as_deref(), Some("Workspace A"));
+    }
+
+    #[test]
+    fn list_auth_files_derives_codex_note_from_matching_account_id() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let token = build_jwt(
+            r#"{
+                "https://api.openai.com/auth": {
+                    "chatgpt_account_id": "org-default",
+                    "organizations": [
+                        { "id": "org-default", "title": "Workspace A", "is_default": true },
+                        { "id": "org-team", "title": "Workspace B", "is_default": false }
+                    ]
+                }
+            }"#,
+        );
+        fs::write(
+            temp_dir.path().join("codex-demo@example.com-team.json"),
+            format!(
+                r#"{{
+                    "type": "codex",
+                    "account_id": "org-team",
+                    "id_token": "{token}"
+                }}"#
+            ),
+        )
+        .expect("seed");
+
+        let files = list_auth_files(temp_dir.path()).expect("list");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].note.as_deref(), Some("Workspace B"));
+    }
+
+    #[test]
+    fn list_auth_files_derives_codex_note_from_default_workspace() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let token = build_jwt(
+            r#"{
+                "https://api.openai.com/auth": {
+                    "organizations": [
+                        { "id": "org-default", "title": "Workspace A", "is_default": true },
+                        { "id": "org-team", "title": "Workspace B", "is_default": false }
+                    ]
+                }
+            }"#,
+        );
+        fs::write(
+            temp_dir.path().join("codex-demo@example.com-team.json"),
+            format!(
+                r#"{{
+                    "type": "codex",
+                    "id_token": "{token}"
+                }}"#
+            ),
+        )
+        .expect("seed");
+
+        let files = list_auth_files(temp_dir.path()).expect("list");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].note.as_deref(), Some("Workspace A"));
+    }
+
+    #[test]
+    fn list_auth_files_derives_codex_note_from_first_workspace_when_default_missing() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let token = build_jwt(
+            r#"{
+                "https://api.openai.com/auth": {
+                    "organizations": [
+                        { "id": "org-one", "title": "Workspace A", "is_default": false },
+                        { "id": "org-two", "title": "Workspace B", "is_default": false }
+                    ]
+                }
+            }"#,
+        );
+        fs::write(
+            temp_dir.path().join("codex-demo@example.com-team.json"),
+            format!(
+                r#"{{
+                    "type": "codex",
+                    "id_token": "{token}"
+                }}"#
+            ),
+        )
+        .expect("seed");
+
+        let files = list_auth_files(temp_dir.path()).expect("list");
+        assert_eq!(files.len(), 1);
         assert_eq!(files[0].note.as_deref(), Some("Workspace A"));
     }
 

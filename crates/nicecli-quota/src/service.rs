@@ -5,6 +5,7 @@ use crate::{
     PROVIDER_CODEX, SOURCE_USAGE_DASHBOARD,
 };
 use chrono::{SecondsFormat, Utc};
+use futures_util::{stream, StreamExt};
 use nicecli_auth::{
     is_generic_codex_workspace_name, patch_auth_file_fields, CodexAccountProfile,
     PatchAuthFileFields,
@@ -16,6 +17,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
+
+const AUTH_REFRESH_CONCURRENCY: usize = 4;
+const WORKSPACE_REFRESH_CONCURRENCY: usize = 4;
 
 #[derive(Debug, Error)]
 pub enum CodexQuotaError {
@@ -97,60 +101,100 @@ impl CodexQuotaService {
             .map_err(CodexQuotaError::ReadAuthDir)?;
         self.sync_cache_with_current_auths(&auths, &options.auth_id);
 
-        let mut effective_auths = auths.clone();
-        for auth in effective_auths
-            .iter_mut()
-            .filter(|auth| options.auth_id.is_empty() || auth.auth_id == options.auth_id)
-        {
-            self.refresh_auth(auth, &options.workspace_id).await;
-        }
+        let requested_auth_id = options.auth_id.clone();
+        let requested_workspace_id = options.workspace_id.clone();
+        let mut effective_auths = stream::iter(
+            auths
+                .into_iter()
+                .filter(|auth| requested_auth_id.is_empty() || auth.auth_id == requested_auth_id)
+                .map(|auth| self.refresh_auth(auth, requested_workspace_id.clone())),
+        )
+        .buffer_unordered(AUTH_REFRESH_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+        effective_auths.sort_by(|left, right| {
+            left.auth_id
+                .cmp(&right.auth_id)
+                .then_with(|| left.account_email.cmp(&right.account_email))
+        });
 
         let mut snapshots = self.cache.list(&options.auth_id, &options.workspace_id);
         apply_current_auth_metadata(&mut snapshots, &effective_auths);
         Ok(snapshots)
     }
 
-    async fn refresh_auth(&self, auth: &mut CodexAuthContext, requested_workspace_id: &str) {
+    async fn refresh_auth(
+        &self,
+        mut auth: CodexAuthContext,
+        requested_workspace_id: String,
+    ) -> CodexAuthContext {
         let original_note = auth.auth_note.clone();
-        let account_profile = self.source.fetch_account_profile(auth).await;
-        let note_changed = apply_account_profile(auth, account_profile.as_ref());
+        let account_profile = self.source.fetch_account_profile(&auth).await;
+        let note_changed = apply_account_profile(&mut auth, account_profile.as_ref());
         if note_changed {
-            self.persist_auth_note(auth, &original_note);
+            self.persist_auth_note(&auth, &original_note);
         }
 
-        let workspaces = match self.source.list_workspaces(auth).await {
+        let workspaces = match self.source.list_workspaces(&auth).await {
             Ok(workspaces) => workspaces,
             Err(error) => {
                 let mut workspace =
-                    workspace_for_failure(auth, requested_workspace_id, &self.cache);
-                apply_account_profile_to_workspace(auth, &mut workspace, account_profile.as_ref());
-                self.mark_refresh_failure(auth, workspace, error);
-                return;
+                    workspace_for_failure(&auth, &requested_workspace_id, &self.cache);
+                apply_account_profile_to_workspace(&auth, &mut workspace, account_profile.as_ref());
+                self.mark_refresh_failure(&auth, workspace, error);
+                return auth;
             }
         };
 
         let mut targets =
-            filter_target_workspaces(auth, &workspaces, requested_workspace_id, &self.cache);
+            filter_target_workspaces(&auth, &workspaces, &requested_workspace_id, &self.cache);
         if targets.is_empty() {
-            let mut workspace = workspace_for_failure(auth, requested_workspace_id, &self.cache);
-            apply_account_profile_to_workspace(auth, &mut workspace, account_profile.as_ref());
+            let mut workspace = workspace_for_failure(&auth, &requested_workspace_id, &self.cache);
+            apply_account_profile_to_workspace(&auth, &mut workspace, account_profile.as_ref());
             targets.push(workspace);
         }
 
-        for mut workspace in targets {
-            workspace = normalize_workspace_ref(auth, workspace);
-            apply_account_profile_to_workspace(auth, &mut workspace, account_profile.as_ref());
-            match self.source.fetch_workspace_snapshot(auth, &workspace).await {
+        let prepared_targets: Vec<_> = targets
+            .into_iter()
+            .map(|workspace| {
+                let mut workspace = normalize_workspace_ref(&auth, workspace);
+                apply_account_profile_to_workspace(&auth, &mut workspace, account_profile.as_ref());
+                workspace
+            })
+            .collect();
+
+        let auth_ref = &auth;
+        let mut refresh_results = stream::iter(prepared_targets.into_iter().enumerate().map(
+            |(index, workspace)| {
+                let auth_ref = auth_ref;
+                async move {
+                    let result = self
+                        .source
+                        .fetch_workspace_snapshot(auth_ref, &workspace)
+                        .await;
+                    (index, workspace, result)
+                }
+            },
+        ))
+        .buffer_unordered(WORKSPACE_REFRESH_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+        refresh_results.sort_by_key(|(index, _, _)| *index);
+
+        for (_, workspace, result) in refresh_results {
+            match result {
                 Ok(snapshot) => {
-                    self.record_refresh_success(auth);
-                    self.upsert_snapshot(auth, workspace, snapshot);
+                    self.record_refresh_success(&auth);
+                    self.upsert_snapshot(&auth, workspace, snapshot);
                 }
                 Err(error) => {
-                    self.record_refresh_failure(auth, &error);
-                    self.mark_refresh_failure(auth, workspace, error);
+                    self.record_refresh_failure(&auth, &error);
+                    self.mark_refresh_failure(&auth, workspace, error);
                 }
             }
         }
+
+        auth
     }
 
     fn upsert_snapshot(
@@ -590,9 +634,15 @@ mod tests {
     use nicecli_auth::CodexAccountProfile;
     use nicecli_runtime::FileAuthStore;
     use serde_json::Value;
+    use std::collections::HashMap;
     use std::fs;
-    use std::sync::Arc;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use std::time::Duration;
     use tempfile::TempDir;
+    use tokio::time::sleep;
 
     #[derive(Clone)]
     struct FakeAuthEnumerator {
@@ -708,9 +758,118 @@ mod tests {
         }
     }
 
-    fn demo_auth_context(auth_file_name: &str) -> CodexAuthContext {
+    #[derive(Clone)]
+    struct ConcurrencyTrackingSource {
+        workspaces_by_auth: HashMap<String, Vec<WorkspaceRef>>,
+        active_snapshot_requests: Arc<AtomicUsize>,
+        max_snapshot_requests: Arc<AtomicUsize>,
+        delay: Duration,
+    }
+
+    impl ConcurrencyTrackingSource {
+        fn new(workspaces_by_auth: HashMap<String, Vec<WorkspaceRef>>, delay: Duration) -> Self {
+            Self {
+                workspaces_by_auth,
+                active_snapshot_requests: Arc::new(AtomicUsize::new(0)),
+                max_snapshot_requests: Arc::new(AtomicUsize::new(0)),
+                delay,
+            }
+        }
+
+        fn max_active_requests(&self) -> usize {
+            self.max_snapshot_requests.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl CodexQuotaSource for ConcurrencyTrackingSource {
+        async fn list_workspaces(
+            &self,
+            auth: &CodexAuthContext,
+        ) -> Result<Vec<WorkspaceRef>, crate::CodexSourceError> {
+            Ok(self
+                .workspaces_by_auth
+                .get(&auth.auth_id)
+                .cloned()
+                .unwrap_or_default())
+        }
+
+        async fn fetch_workspace_snapshot(
+            &self,
+            _auth: &CodexAuthContext,
+            _workspace: &WorkspaceRef,
+        ) -> Result<RateLimitSnapshot, crate::CodexSourceError> {
+            let active = self.active_snapshot_requests.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_snapshot_requests
+                .fetch_max(active, Ordering::SeqCst);
+            sleep(self.delay).await;
+            self.active_snapshot_requests.fetch_sub(1, Ordering::SeqCst);
+            Ok(RateLimitSnapshot {
+                limit_id: Some("codex".to_string()),
+                limit_name: None,
+                primary: None,
+                secondary: None,
+                credits: None,
+                plan_type: Some("team".to_string()),
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct OrderedPersistenceSource;
+
+    #[async_trait]
+    impl CodexQuotaSource for OrderedPersistenceSource {
+        async fn list_workspaces(
+            &self,
+            _auth: &CodexAuthContext,
+        ) -> Result<Vec<WorkspaceRef>, crate::CodexSourceError> {
+            Ok(vec![
+                WorkspaceRef {
+                    id: "workspace-a".to_string(),
+                    name: "Workspace A".to_string(),
+                    r#type: "business".to_string(),
+                },
+                WorkspaceRef {
+                    id: "workspace-b".to_string(),
+                    name: "Workspace B".to_string(),
+                    r#type: "business".to_string(),
+                },
+            ])
+        }
+
+        async fn fetch_workspace_snapshot(
+            &self,
+            _auth: &CodexAuthContext,
+            workspace: &WorkspaceRef,
+        ) -> Result<RateLimitSnapshot, crate::CodexSourceError> {
+            match workspace.id.as_str() {
+                "workspace-a" => {
+                    sleep(Duration::from_millis(75)).await;
+                    Ok(RateLimitSnapshot {
+                        limit_id: Some("codex".to_string()),
+                        limit_name: None,
+                        primary: None,
+                        secondary: None,
+                        credits: None,
+                        plan_type: Some("team".to_string()),
+                    })
+                }
+                "workspace-b" => {
+                    sleep(Duration::from_millis(10)).await;
+                    Err(crate::CodexSourceError::UnexpectedStatus {
+                        status: 429,
+                        body: "quota exhausted".to_string(),
+                    })
+                }
+                _ => unreachable!("unexpected workspace"),
+            }
+        }
+    }
+
+    fn demo_auth_context_with_id(auth_id: &str, auth_file_name: &str) -> CodexAuthContext {
         CodexAuthContext {
-            auth_id: auth_file_name.to_string(),
+            auth_id: auth_id.to_string(),
             auth_label: "Primary".to_string(),
             auth_note: "Workspace A".to_string(),
             auth_file_name: auth_file_name.to_string(),
@@ -724,6 +883,10 @@ mod tests {
             base_url: String::new(),
             proxy_url: String::new(),
         }
+    }
+
+    fn demo_auth_context(auth_file_name: &str) -> CodexAuthContext {
+        demo_auth_context_with_id(auth_file_name, auth_file_name)
     }
 
     fn build_service() -> CodexQuotaService {
@@ -876,6 +1039,151 @@ mod tests {
         )
         .expect("auth json");
         assert_eq!(auth_json["note"].as_str(), Some("MyTeam"));
+    }
+
+    #[tokio::test]
+    async fn refresh_runs_auths_in_parallel() {
+        let source = ConcurrencyTrackingSource::new(
+            HashMap::from([
+                (
+                    "auth-a".to_string(),
+                    vec![WorkspaceRef {
+                        id: "workspace-a".to_string(),
+                        name: "Workspace A".to_string(),
+                        r#type: "business".to_string(),
+                    }],
+                ),
+                (
+                    "auth-b".to_string(),
+                    vec![WorkspaceRef {
+                        id: "workspace-b".to_string(),
+                        name: "Workspace B".to_string(),
+                        r#type: "business".to_string(),
+                    }],
+                ),
+                (
+                    "auth-c".to_string(),
+                    vec![WorkspaceRef {
+                        id: "workspace-c".to_string(),
+                        name: "Workspace C".to_string(),
+                        r#type: "business".to_string(),
+                    }],
+                ),
+            ]),
+            Duration::from_millis(40),
+        );
+        let service = CodexQuotaService::with_deps(
+            Arc::new(FakeAuthEnumerator {
+                auths: vec![
+                    demo_auth_context_with_id("auth-a", "codex-a.json"),
+                    demo_auth_context_with_id("auth-b", "codex-b.json"),
+                    demo_auth_context_with_id("auth-c", "codex-c.json"),
+                ],
+            }),
+            Arc::new(source.clone()),
+        );
+
+        let snapshots = service
+            .list_snapshots_with_options(ListOptions {
+                refresh: true,
+                ..ListOptions::default()
+            })
+            .await
+            .expect("refresh");
+
+        assert_eq!(snapshots.len(), 3);
+        assert!(
+            source.max_active_requests() > 1,
+            "expected auth-level refresh to overlap remote snapshot fetches"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_runs_workspaces_in_parallel_within_single_auth() {
+        let source = ConcurrencyTrackingSource::new(
+            HashMap::from([(
+                "auth-a".to_string(),
+                vec![
+                    WorkspaceRef {
+                        id: "workspace-a".to_string(),
+                        name: "Workspace A".to_string(),
+                        r#type: "business".to_string(),
+                    },
+                    WorkspaceRef {
+                        id: "workspace-b".to_string(),
+                        name: "Workspace B".to_string(),
+                        r#type: "business".to_string(),
+                    },
+                    WorkspaceRef {
+                        id: "workspace-c".to_string(),
+                        name: "Workspace C".to_string(),
+                        r#type: "business".to_string(),
+                    },
+                ],
+            )]),
+            Duration::from_millis(40),
+        );
+        let service = CodexQuotaService::with_deps(
+            Arc::new(FakeAuthEnumerator {
+                auths: vec![demo_auth_context_with_id("auth-a", "codex-a.json")],
+            }),
+            Arc::new(source.clone()),
+        );
+
+        let snapshots = service
+            .list_snapshots_with_options(ListOptions {
+                refresh: true,
+                ..ListOptions::default()
+            })
+            .await
+            .expect("refresh");
+
+        assert_eq!(snapshots.len(), 3);
+        assert!(
+            source.max_active_requests() > 1,
+            "expected workspace-level refresh to overlap remote snapshot fetches"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_preserves_workspace_result_write_order_after_parallel_fetch() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let auth_file_name = "codex-demo@example.com-team.json";
+        seed_auth_file(&temp_dir, auth_file_name);
+
+        let service = CodexQuotaService::with_deps(
+            Arc::new(FakeAuthEnumerator {
+                auths: vec![demo_auth_context_with_id("auth-a", auth_file_name)],
+            }),
+            Arc::new(OrderedPersistenceSource),
+        )
+        .with_result_store(FileAuthStore::new(temp_dir.path()));
+
+        let snapshots = service
+            .list_snapshots_with_options(ListOptions {
+                refresh: true,
+                ..ListOptions::default()
+            })
+            .await
+            .expect("refresh");
+
+        assert_eq!(snapshots.len(), 2);
+        assert_eq!(
+            snapshots.iter().filter(|snapshot| snapshot.stale).count(),
+            1
+        );
+
+        let refreshed_auth: Value = serde_json::from_slice(
+            &fs::read(temp_dir.path().join(auth_file_name)).expect("read auth"),
+        )
+        .expect("auth json");
+        assert_eq!(refreshed_auth["status"].as_str(), Some("error"));
+        assert_eq!(refreshed_auth["unavailable"].as_bool(), Some(true));
+        assert_eq!(refreshed_auth["quota"]["exceeded"].as_bool(), Some(true));
+        assert_eq!(
+            refreshed_auth["last_error"]["http_status"].as_u64(),
+            Some(429)
+        );
     }
 
     #[test]

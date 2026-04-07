@@ -8,6 +8,7 @@ license.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 chrono.workspace = true
+futures-util.workspace = true
 nicecli-auth = { path = "../nicecli-auth" }
 nicecli-runtime = { path = "../nicecli-runtime" }
 reqwest.workspace = true

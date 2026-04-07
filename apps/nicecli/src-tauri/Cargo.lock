@@ -2682,6 +2682,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "futures-util",
  "nicecli-auth",
  "nicecli-runtime",
  "reqwest 0.12.28",

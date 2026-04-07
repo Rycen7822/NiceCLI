@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -259,22 +260,41 @@ pub enum CodexSourceError {
 #[derive(Debug, Clone, Default)]
 pub struct HttpCodexQuotaSource {
     default_proxy_url: Option<String>,
+    clients: Arc<RwLock<HashMap<String, Client>>>,
 }
 
 impl HttpCodexQuotaSource {
     pub fn new(default_proxy_url: Option<String>) -> Self {
         Self {
             default_proxy_url: default_proxy_url.and_then(trimmed),
+            clients: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     fn build_http_client(&self, auth: &CodexAuthContext) -> Result<Client, reqwest::Error> {
         let proxy_url = trimmed(auth.proxy_url.clone()).or_else(|| self.default_proxy_url.clone());
+        let cache_key = proxy_url.clone().unwrap_or_default();
+        if let Some(client) = self
+            .clients
+            .read()
+            .expect("quota client cache read lock")
+            .get(&cache_key)
+            .cloned()
+        {
+            return Ok(client);
+        }
+
         let mut builder = Client::builder().timeout(Duration::from_secs(30));
         if let Some(proxy_url) = proxy_url {
             builder = builder.proxy(Proxy::all(proxy_url)?);
         }
-        builder.build()
+        let client = builder.build()?;
+        self.clients
+            .write()
+            .expect("quota client cache write lock")
+            .entry(cache_key)
+            .or_insert_with(|| client.clone());
+        Ok(client)
     }
 }
 

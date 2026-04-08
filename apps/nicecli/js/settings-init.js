@@ -5,7 +5,7 @@ async function initializeSettingsPreferences() {
   if (window.NiceCLIi18n) {
     await window.NiceCLIi18n.initialize("settings");
   }
-  initializeAppPreferencesTab();
+  await initializeAppPreferencesTab();
 }
 
 function handleSettingsLanguageChange() {
@@ -38,7 +38,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initializePort();
     await initializeProxyUrl();
     await initializeAdditionalSettings();
-    await initializeAutoStart();
     toggleLocalOnlyFields();
     updateServerStatus();
     updateActionButtons();

@@ -79,7 +79,7 @@ async function loadTabContent(tabId) {
   await ensureTabScriptsLoaded(tabId);
 
   if (tabId === "app-settings") {
-    initializeAppPreferencesTab();
+    await initializeAppPreferencesTab();
   }
   if (tabId === "auth") {
     await loadAuthFiles();

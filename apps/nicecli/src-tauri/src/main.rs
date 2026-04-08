@@ -16,6 +16,7 @@ mod desktop_host;
 mod file_export;
 mod local_runtime;
 mod managed_host;
+mod startup_preferences;
 mod tray_host;
 mod tray_smoke;
 mod window_lifecycle;
@@ -37,6 +38,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rand::Rng;
 use serde_json::json;
+use startup_preferences::{read_startup_preferences, update_startup_preferences};
 use std::io;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -359,7 +361,9 @@ fn main() {
             save_files_to_directory,
             check_auto_start_enabled,
             enable_auto_start,
-            disable_auto_start
+            disable_auto_start,
+            read_startup_preferences,
+            update_startup_preferences
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

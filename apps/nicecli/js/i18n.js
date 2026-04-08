@@ -51,6 +51,12 @@
           languageLabel: "Language",
           languageDescription:
             "Choose the display language used by the login and settings pages.",
+          autoLoginLabel: "Auto Login",
+          autoLoginDescription:
+            "Start the local runtime automatically and open the control panel on app launch.",
+          silentStartupLabel: "Silent Startup",
+          silentStartupDescription:
+            "When auto login is enabled, start NiceCLI directly in the background tray.",
           light: "Light",
           dark: "Dark",
           english: "English",
@@ -269,6 +275,9 @@
           resetToServer: "{{tab}} reset to server config",
           themeUpdated: "Theme updated",
           languageUpdated: "Language updated",
+          startupPreferencesUpdated: "Startup preferences updated",
+          startupPreferencesUpdateFailed:
+            "Failed to update startup preferences",
         },
         tabs: {
           basic: "server",
@@ -324,6 +333,12 @@
           themeDescription: "切换 NiceCLI 的浅色 / 深色外观。",
           languageLabel: "语言",
           languageDescription: "选择登录页和设置页的显示语言。",
+          autoLoginLabel: "自动登录",
+          autoLoginDescription:
+            "应用启动时自动启动本地运行时并打开控制面板。",
+          silentStartupLabel: "静默启动",
+          silentStartupDescription:
+            "开启自动登录后，NiceCLI 将直接在后台托盘启动。",
           light: "浅色",
           dark: "深色",
           english: "English",
@@ -526,6 +541,8 @@
           resetToServer: "{{tab}}已重置为服务端配置",
           themeUpdated: "主题已更新",
           languageUpdated: "语言已更新",
+          startupPreferencesUpdated: "启动偏好已更新",
+          startupPreferencesUpdateFailed: "更新启动偏好失败",
         },
         tabs: {
           basic: "服务",

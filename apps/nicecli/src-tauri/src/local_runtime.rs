@@ -1,8 +1,20 @@
 use crate::backend_launch::{load_backend_port, prepare_backend_launch, wait_for_listen_port};
 use crate::managed_host::{managed_process_running, start_monitor, stop_managed_process};
 use crate::tray_host::create_tray;
-use serde_json::json;
+use serde::Serialize;
 use tauri::{Emitter, Manager};
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalRuntimeStartResponse {
+    pub(crate) success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) password: Option<String>,
+    pub(crate) version: String,
+    pub(crate) backend_mode: String,
+}
 
 fn kill_process_on_port(port: u16) -> Result<(), String> {
     println!("[PORT_CLEANUP] Checking port {}", port);
@@ -81,11 +93,10 @@ fn kill_process_on_port(port: u16) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub(crate) fn start_local_runtime(
+pub(crate) fn start_local_runtime_internal(
     app: tauri::AppHandle,
-    proxy_url: Option<String>,
-) -> Result<serde_json::Value, String> {
+    proxy_url: Option<&str>,
+) -> Result<LocalRuntimeStartResponse, String> {
     if managed_process_running() {
         let info =
             crate::MANAGED_BACKEND_INFO
@@ -95,19 +106,19 @@ pub(crate) fn start_local_runtime(
                     mode: "rust-in-process".to_string(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
                 });
-        return Ok(json!({
-            "success": true,
-            "message": "already running",
-            "password": crate::CLI_PROXY_PASSWORD.lock().clone(),
-            "version": info.version,
-            "backend_mode": info.mode,
-        }));
+        return Ok(LocalRuntimeStartResponse {
+            success: true,
+            message: Some("already running".to_string()),
+            password: crate::CLI_PROXY_PASSWORD.lock().clone(),
+            version: info.version,
+            backend_mode: info.mode,
+        });
     }
 
     let dir = crate::app_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    let launch = prepare_backend_launch(&dir, proxy_url.as_deref())?;
+    let launch = prepare_backend_launch(&dir, proxy_url)?;
     let port = load_backend_port(launch.config_path())?;
 
     if let Err(error) = kill_process_on_port(port) {
@@ -152,18 +163,27 @@ pub(crate) fn start_local_runtime(
 
     let _ = create_tray(&app);
 
-    Ok(json!({
-        "success": true,
-        "password": password,
-        "version": info.version,
-        "backend_mode": info.mode,
-    }))
+    Ok(LocalRuntimeStartResponse {
+        success: true,
+        message: None,
+        password: Some(password),
+        version: info.version,
+        backend_mode: info.mode,
+    })
+}
+
+#[tauri::command]
+pub(crate) fn start_local_runtime(
+    app: tauri::AppHandle,
+    proxy_url: Option<String>,
+) -> Result<LocalRuntimeStartResponse, String> {
+    start_local_runtime_internal(app, proxy_url.as_deref())
 }
 
 #[tauri::command]
 pub(crate) fn restart_local_runtime(app: tauri::AppHandle) -> Result<(), String> {
     stop_managed_process();
-    let result = start_local_runtime(app.clone(), None)?;
+    let result = start_local_runtime_internal(app.clone(), None)?;
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.emit("local-runtime-restarted", result.clone());
     }

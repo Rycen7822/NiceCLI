@@ -11,7 +11,6 @@ const switchProjectSwitch = document.getElementById("switch-project-switch");
 const switchPreviewModelSwitch = document.getElementById(
   "switch-preview-model-switch",
 );
-const autoStartSwitch = document.getElementById("auto-start-switch");
 
 // Action buttons
 const applyBtn = document.getElementById("apply-btn");
@@ -118,51 +117,6 @@ async function initializeAdditionalSettings() {
     switchPreviewModelSwitch.checked = false;
   }
 }
-
-// Initialize auto-start switch
-async function initializeAutoStart() {
-  try {
-    if (window.__TAURI__?.core?.invoke) {
-      const result = await window.__TAURI__.core.invoke(
-        "check_auto_start_enabled",
-      );
-      autoStartSwitch.checked = result.enabled || false;
-    }
-  } catch (error) {
-    console.error("Error checking auto-start status:", error);
-    autoStartSwitch.checked = false;
-  }
-}
-
-// Handle auto-start toggle change
-autoStartSwitch.addEventListener("change", async () => {
-  try {
-    if (window.__TAURI__?.core?.invoke) {
-      if (autoStartSwitch.checked) {
-        const result = await window.__TAURI__.core.invoke("enable_auto_start");
-        if (result.success) {
-          showSuccessMessage(nicecliT("toasts.autoStartEnabled"));
-        } else {
-          showError(nicecliT("toasts.autoStartEnableFailed"));
-          autoStartSwitch.checked = false;
-        }
-      } else {
-        const result = await window.__TAURI__.core.invoke("disable_auto_start");
-        if (result.success) {
-          showSuccessMessage(nicecliT("toasts.autoStartDisabled"));
-        } else {
-          showError(nicecliT("toasts.autoStartDisableFailed"));
-          autoStartSwitch.checked = true;
-        }
-      }
-    }
-  } catch (error) {
-    console.error("Error toggling auto-start:", error);
-    showError(nicecliT("toasts.autoStartUpdateFailed"));
-    // Revert the toggle
-    autoStartSwitch.checked = !autoStartSwitch.checked;
-  }
-});
 
 // Get current config from server
 async function getCurrentConfig() {

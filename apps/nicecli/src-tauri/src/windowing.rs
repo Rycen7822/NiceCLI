@@ -1,4 +1,5 @@
 use crate::app_identity::app_display_name;
+use serde_json::to_string;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const CONTROL_PANEL_WINDOW_WIDTH: f64 = 1116.0;
@@ -42,6 +43,22 @@ fn open_main_window_page(app: &AppHandle, page: &str, title: &str) -> Result<(),
         let _ = app.set_dock_visibility(true);
     }
     Ok(())
+}
+
+pub(crate) fn write_local_runtime_session(app: &AppHandle, password: &str) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let password_json = to_string(password).map_err(|error| error.to_string())?;
+    let script = format!(
+        r#"
+            localStorage.setItem("type", "local");
+            localStorage.removeItem("base-url");
+            localStorage.removeItem("password");
+            localStorage.setItem("local-management-key", {password_json});
+        "#
+    );
+    window.eval(&script).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

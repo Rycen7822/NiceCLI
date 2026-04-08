@@ -132,6 +132,83 @@
                                 ></select>
                             </div>
                         </div>
+
+                        <div class="setting-item" id="auto-start-setting">
+                            <div class="setting-label">
+                                <label for="auto-start-switch">
+                                    Start at Login
+                                </label>
+                                <span class="setting-description">
+                                    Launch NiceCLI automatically when you log in
+                                </span>
+                            </div>
+                            <div class="setting-control">
+                                <label class="switch">
+                                    <input
+                                        type="checkbox"
+                                        id="auto-start-switch"
+                                        class="switch-input"
+                                    />
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="setting-item" id="auto-login-setting">
+                            <div class="setting-label">
+                                <label
+                                    for="auto-login-switch"
+                                    data-i18n="appSettings.autoLoginLabel"
+                                >
+                                    Auto Login
+                                </label>
+                                <span
+                                    class="setting-description"
+                                    data-i18n="appSettings.autoLoginDescription"
+                                >
+                                    Start the local runtime automatically and
+                                    open the control panel on app launch.
+                                </span>
+                            </div>
+                            <div class="setting-control">
+                                <label class="switch">
+                                    <input
+                                        type="checkbox"
+                                        id="auto-login-switch"
+                                        class="switch-input"
+                                    />
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="setting-item" id="silent-startup-setting">
+                            <div class="setting-label">
+                                <label
+                                    for="silent-startup-switch"
+                                    data-i18n="appSettings.silentStartupLabel"
+                                >
+                                    Silent Startup
+                                </label>
+                                <span
+                                    class="setting-description"
+                                    data-i18n="appSettings.silentStartupDescription"
+                                >
+                                    When auto login is enabled, start NiceCLI
+                                    directly in the background tray.
+                                </span>
+                            </div>
+                            <div class="setting-control">
+                                <label class="switch">
+                                    <input
+                                        type="checkbox"
+                                        id="silent-startup-switch"
+                                        class="switch-input"
+                                    />
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -165,31 +242,6 @@
                                     max="65535"
                                     placeholder="8080"
                                 />
-                            </div>
-                        </div>
-
-                        <div
-                            class="setting-item local-only"
-                            id="auto-start-setting"
-                        >
-                            <div class="setting-label">
-                                <label for="auto-start-switch"
-                                    >Start at Login</label
-                                >
-                                <span class="setting-description"
-                                    >Launch NiceCLI automatically when you log
-                                    in</span
-                                >
-                            </div>
-                            <div class="setting-control">
-                                <label class="switch">
-                                    <input
-                                        type="checkbox"
-                                        id="auto-start-switch"
-                                        class="switch-input"
-                                    />
-                                    <span class="switch-slider"></span>
-                                </label>
                             </div>
                         </div>
 

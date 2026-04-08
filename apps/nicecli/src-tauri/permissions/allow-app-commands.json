@@ -14,6 +14,8 @@
     "save_files_to_directory",
     "check_auto_start_enabled",
     "enable_auto_start",
-    "disable_auto_start"
+    "disable_auto_start",
+    "read_startup_preferences",
+    "update_startup_preferences"
   ]
 }

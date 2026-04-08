@@ -166,7 +166,6 @@ impl CodexQuotaService {
         let auth_ref = &auth;
         let mut refresh_results = stream::iter(prepared_targets.into_iter().enumerate().map(
             |(index, workspace)| {
-                let auth_ref = auth_ref;
                 async move {
                     let result = self
                         .source

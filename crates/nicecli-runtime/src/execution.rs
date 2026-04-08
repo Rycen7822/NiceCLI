@@ -387,9 +387,7 @@ fn is_workspace_deactivated_message(message: &str) -> bool {
     let lower = message.trim().to_ascii_lowercase();
     !lower.is_empty()
         && lower.contains("workspace")
-        && (lower.contains("deactivat")
-            || lower.contains("inactive")
-            || lower.contains("disabled"))
+        && (lower.contains("deactivat") || lower.contains("inactive") || lower.contains("disabled"))
 }
 
 fn canonical_model_key(model: &str) -> String {

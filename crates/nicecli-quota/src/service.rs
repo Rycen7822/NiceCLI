@@ -165,14 +165,12 @@ impl CodexQuotaService {
 
         let auth_ref = &auth;
         let mut refresh_results = stream::iter(prepared_targets.into_iter().enumerate().map(
-            |(index, workspace)| {
-                async move {
-                    let result = self
-                        .source
-                        .fetch_workspace_snapshot(auth_ref, &workspace)
-                        .await;
-                    (index, workspace, result)
-                }
+            |(index, workspace)| async move {
+                let result = self
+                    .source
+                    .fetch_workspace_snapshot(auth_ref, &workspace)
+                    .await;
+                (index, workspace, result)
             },
         ))
         .buffer_unordered(WORKSPACE_REFRESH_CONCURRENCY)

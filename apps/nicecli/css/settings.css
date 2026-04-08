@@ -659,6 +659,7 @@ textarea.form-input {
 }
 
 .auth-file-note-badge,
+.auth-file-status-badge,
 .workspace-quota-chip {
     display: inline-flex;
     align-items: center;
@@ -669,6 +670,12 @@ textarea.form-input {
     color: var(--accent);
     font-size: 11px;
     font-weight: 700;
+}
+
+.auth-file-status-badge.is-deactivated {
+    border-color: var(--warning);
+    background: var(--warning-soft);
+    color: var(--warning);
 }
 
 .auth-file-details,

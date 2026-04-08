@@ -75,6 +75,7 @@ function renderAuthFiles() {
     const noteButtonLabel = note
       ? nicecliT("authFiles.editNote")
       : nicecliT("authFiles.addNote");
+    const statusLabel = formatAuthFileStatusLabel(file);
     const emailMarkup = email
       ? `<span class="auth-file-email">${escapeAuthFileHtml(
           nicecliT("authFiles.emailPrefix", { email }),
@@ -90,6 +91,7 @@ function renderAuthFiles() {
             <div class="auth-file-info">
                 <div class="auth-file-title-row">
                     <div class="auth-file-name">${escapeAuthFileHtml(file.name)}</div>
+                    ${statusLabel ? `<span class="auth-file-status-badge is-deactivated">${escapeAuthFileHtml(statusLabel)}</span>` : ""}
                     ${note ? `<span class="auth-file-note-badge">${escapeAuthFileHtml(nicecliT("authFiles.remarkBadge"))}</span>` : ""}
                 </div>
                 <div class="auth-file-note">${escapeAuthFileHtml(nicecliT("authFiles.notePrefix"))}${noteMarkup}</div>
@@ -132,6 +134,22 @@ function showEmptyAuthFiles() {
 
 function normalizeAuthFileText(value) {
   return String(value ?? "").trim();
+}
+
+function formatAuthFileStatusLabel(file) {
+  if (!isAuthFileDeactivated(file)) {
+    return "";
+  }
+  return nicecliT("authFiles.deactivatedBadge");
+}
+
+function isAuthFileDeactivated(file) {
+  if (file?.disabled === true) {
+    return true;
+  }
+
+  const status = normalizeAuthFileText(file?.status).toLowerCase();
+  return status === "disabled" || status === "deactivated";
 }
 
 function escapeAuthFileHtml(value) {

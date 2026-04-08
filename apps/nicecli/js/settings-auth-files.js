@@ -75,7 +75,7 @@ function renderAuthFiles() {
     const noteButtonLabel = note
       ? nicecliT("authFiles.editNote")
       : nicecliT("authFiles.addNote");
-    const statusLabel = formatAuthFileStatusLabel(file);
+    const statusBadge = getAuthFileStatusBadge(file);
     const emailMarkup = email
       ? `<span class="auth-file-email">${escapeAuthFileHtml(
           nicecliT("authFiles.emailPrefix", { email }),
@@ -91,7 +91,7 @@ function renderAuthFiles() {
             <div class="auth-file-info">
                 <div class="auth-file-title-row">
                     <div class="auth-file-name">${escapeAuthFileHtml(file.name)}</div>
-                    ${statusLabel ? `<span class="auth-file-status-badge is-deactivated">${escapeAuthFileHtml(statusLabel)}</span>` : ""}
+                    ${statusBadge ? `<span class="auth-file-status-badge ${statusBadge.className}">${escapeAuthFileHtml(statusBadge.label)}</span>` : ""}
                     ${note ? `<span class="auth-file-note-badge">${escapeAuthFileHtml(nicecliT("authFiles.remarkBadge"))}</span>` : ""}
                 </div>
                 <div class="auth-file-note">${escapeAuthFileHtml(nicecliT("authFiles.notePrefix"))}${noteMarkup}</div>
@@ -136,20 +136,35 @@ function normalizeAuthFileText(value) {
   return String(value ?? "").trim();
 }
 
-function formatAuthFileStatusLabel(file) {
-  if (!isAuthFileDeactivated(file)) {
-    return "";
+function getAuthFileStatusBadge(file) {
+  if (isAuthFileDisabled(file)) {
+    return {
+      label: nicecliT("authFiles.disabledBadge"),
+      className: "is-disabled",
+    };
   }
-  return nicecliT("authFiles.deactivatedBadge");
+  if (isAuthFileDeactivated(file)) {
+    return {
+      label: nicecliT("authFiles.deactivatedBadge"),
+      className: "is-deactivated",
+    };
+  }
+  return null;
 }
 
-function isAuthFileDeactivated(file) {
+function isAuthFileDisabled(file) {
   if (file?.disabled === true) {
     return true;
   }
 
   const status = normalizeAuthFileText(file?.status).toLowerCase();
-  return status === "disabled" || status === "deactivated";
+  return status === "disabled";
+}
+
+function isAuthFileDeactivated(file) {
+  const status = normalizeAuthFileText(file?.status).toLowerCase();
+  const statusMessage = normalizeAuthFileText(file?.status_message).toLowerCase();
+  return status === "deactivated" || statusMessage === "deactivated";
 }
 
 function escapeAuthFileHtml(value) {

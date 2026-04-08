@@ -678,6 +678,12 @@ textarea.form-input {
     color: var(--warning);
 }
 
+.auth-file-status-badge.is-disabled {
+    border-color: var(--muted);
+    background: transparent;
+    color: var(--muted-strong);
+}
+
 .auth-file-details,
 .openai-provider-details,
 .workspace-quota-card-subtitle {

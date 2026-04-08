@@ -74,8 +74,7 @@ pub fn apply_execution_result(
         let top_level_status_message = result
             .error
             .as_ref()
-            .map(|error| error.message.trim().to_string())
-            .filter(|message| !message.is_empty());
+            .and_then(canonical_result_error_message);
 
         let model_state = ensure_model_state(state, model);
         model_state.unavailable = true;
@@ -83,8 +82,7 @@ pub fn apply_execution_result(
         model_state.status_message = result
             .error
             .as_ref()
-            .map(|error| error.message.trim().to_string())
-            .filter(|message| !message.is_empty());
+            .and_then(canonical_result_error_message);
 
         if is_model_support_result_error(result.error.as_ref()) {
             model_state.next_retry_after = Some(now + Duration::hours(12));
@@ -266,9 +264,7 @@ fn apply_auth_failure_state(
 
     state.unavailable = true;
     state.status = "error".to_string();
-    state.status_message = error
-        .map(|error| error.message.trim().to_string())
-        .filter(|message| !message.is_empty());
+    state.status_message = error.and_then(canonical_result_error_message);
 
     match error
         .and_then(|error| error.http_status)
@@ -279,7 +275,9 @@ fn apply_auth_failure_state(
             state.next_retry_after = Some(now + Duration::minutes(30));
         }
         402 | 403 => {
-            state.status_message = Some("payment_required".to_string());
+            if state.status_message.as_deref() != Some("deactivated") {
+                state.status_message = Some("payment_required".to_string());
+            }
             state.next_retry_after = Some(now + Duration::minutes(30));
         }
         404 => {
@@ -372,6 +370,26 @@ fn is_request_scoped_not_found_message(message: &str) -> bool {
     lower.contains("item with id")
         && lower.contains("not found")
         && lower.contains("items are not persisted when `store` is set to false")
+}
+
+fn canonical_result_error_message(error: &ExecutionError) -> Option<String> {
+    let message = error.message.trim();
+    if message.is_empty() {
+        return None;
+    }
+    if is_workspace_deactivated_message(message) {
+        return Some("deactivated".to_string());
+    }
+    Some(message.to_string())
+}
+
+fn is_workspace_deactivated_message(message: &str) -> bool {
+    let lower = message.trim().to_ascii_lowercase();
+    !lower.is_empty()
+        && lower.contains("workspace")
+        && (lower.contains("deactivat")
+            || lower.contains("inactive")
+            || lower.contains("disabled"))
 }
 
 fn canonical_model_key(model: &str) -> String {
@@ -510,6 +528,64 @@ mod tests {
         assert_eq!(state.status_message.as_deref(), Some("quota exhausted"));
         assert_eq!(state.next_retry_after, Some(now + Duration::seconds(45)));
         assert!(state.quota.exceeded);
+    }
+
+    #[test]
+    fn auth_failure_marks_deactivated_workspace_explicitly() {
+        let now = Utc.with_ymd_and_hms(2026, 4, 5, 12, 0, 0).unwrap();
+        let mut state = AuthCandidateState {
+            status: "active".to_string(),
+            ..AuthCandidateState::default()
+        };
+
+        apply_execution_result(
+            &mut state,
+            &ExecutionResult {
+                model: None,
+                success: false,
+                retry_after: None,
+                error: Some(ExecutionError {
+                    message: r#"{"message":"workspace is deactivated"}"#.to_string(),
+                    http_status: Some(403),
+                }),
+            },
+            now,
+            false,
+        );
+
+        assert_eq!(state.status, "error");
+        assert_eq!(state.status_message.as_deref(), Some("deactivated"));
+        assert_eq!(state.next_retry_after, Some(now + Duration::minutes(30)));
+        assert!(!state.quota.exceeded);
+    }
+
+    #[test]
+    fn auth_failure_keeps_generic_payment_required_for_other_403s() {
+        let now = Utc.with_ymd_and_hms(2026, 4, 5, 12, 0, 0).unwrap();
+        let mut state = AuthCandidateState {
+            status: "active".to_string(),
+            ..AuthCandidateState::default()
+        };
+
+        apply_execution_result(
+            &mut state,
+            &ExecutionResult {
+                model: None,
+                success: false,
+                retry_after: None,
+                error: Some(ExecutionError {
+                    message: r#"{"message":"payment required"}"#.to_string(),
+                    http_status: Some(403),
+                }),
+            },
+            now,
+            false,
+        );
+
+        assert_eq!(state.status, "error");
+        assert_eq!(state.status_message.as_deref(), Some("payment_required"));
+        assert_eq!(state.next_retry_after, Some(now + Duration::minutes(30)));
+        assert!(!state.quota.exceeded);
     }
 
     #[test]

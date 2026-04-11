@@ -19,7 +19,7 @@
   "author": "NiceCLI Contributors",
   "license": "MIT",
   "dependencies": {
-    "i18next": "^26.0.3"
+    "i18next": "^26.0.4"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",

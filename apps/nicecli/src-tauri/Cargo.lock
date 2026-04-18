@@ -2602,7 +2602,7 @@ dependencies = [
  "nicecli-config",
  "once_cell",
  "parking_lot",
- "rand 0.8.5",
+ "rand 0.9.2",
  "reqwest 0.12.28",
  "rfd",
  "serde",
@@ -2623,7 +2623,7 @@ version = "0.3.7"
 dependencies = [
  "base64 0.22.1",
  "chrono",
- "rand 0.8.5",
+ "rand 0.9.2",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

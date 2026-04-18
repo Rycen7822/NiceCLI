@@ -29,7 +29,7 @@ image = { version = "0.24", default-features = false, features = ["png"] }
 ico = "0.3"
 icns = "0.3"
 rfd = "0.14"
-rand = "0.8"
+rand = "0.9"
 nicecli-backend = { path = "../../../crates/nicecli-backend" }
 nicecli-config = { path = "../../../crates/nicecli-config" }
 
